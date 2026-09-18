@@ -84,26 +84,70 @@ Public Sub DrawScreen() 'Using Api and SetBits/StrechBits
    End If
    End Sub
    
-
+'Sub ccolid2(col As Byte, target As Long)
+'Dim tm1 As Long, tm2 As Long
+'     colid2(target, 0, 0) = colid(col And 2, col And 1)
+'    For tm2 = 1 To 128 Step 0
+'     colid2(target, 0, tm2) = colid(col And 8, col And 4)
+'    tm2 = tm2 * 2
+'    Next tm2
+'    For tm1 = 1 To 128 Step 0
+'     colid2(target, tm1, 0) = colid(col And 32, col And 16)
+'    tm1 = tm1 * 2
+'    Next tm1
+'    For tm1 = 1 To 128 Step 0
+'    For tm2 = 1 To 128 Step 0
+'     colid2(target, tm1, tm2) = colid(col And 128, col And 64)
+'    tm2 = tm2 * 2
+'    Next tm2
+'    tm1 = tm1 * 2
+ '   Next tm1
+'End Sub
 Sub ccolid2(col As Byte, target As Long)
-Dim tm1 As Long, tm2 As Long
-    colid2(target, 0, 0) = colid(col And 2, col And 1)
-    For tm2 = 1 To 128 Step 0
-    colid2(target, 0, tm2) = colid(col And 8, col And 4)
-    tm2 = tm2 * 2
-    Next tm2
-    For tm1 = 1 To 128 Step 0
-    colid2(target, tm1, 0) = colid(col And 32, col And 16)
-    tm1 = tm1 * 2
-    Next tm1
-    For tm1 = 1 To 128 Step 0
-    For tm2 = 1 To 128 Step 0
-    colid2(target, tm1, tm2) = colid(col And 128, col And 64)
-    tm2 = tm2 * 2
-    Next tm2
-    tm1 = tm1 * 2
-    Next tm1
+    Dim tm1 As Long, tm2 As Long
+    Dim idx1 As Long, idx2 As Long
+
+    ' 1. (col And 2, col And 1) -> (0~1, 0~1) 정규화
+    idx1 = (col And 2) \ 2
+    idx2 = col And 1
+    colid2(target, 0, 0) = colid(idx1, idx2)
+
+    ' 2. (col And 8, col And 4) -> (0~1, 0~1) 정규화
+    idx1 = (col And 8) \ 8
+    idx2 = (col And 4) \ 4
+    
+    tm2 = 1
+    Do While tm2 <= 128
+        colid2(target, 0, tm2) = colid(idx1, idx2)
+        tm2 = tm2 * 2
+    Loop
+
+    ' 3. (col And 32, col And 16) -> (0~1, 0~1) 정규화
+    idx1 = (col And 32) \ 32
+    idx2 = (col And 16) \ 16
+    
+    tm1 = 1
+    Do While tm1 <= 128
+        colid2(target, tm1, 0) = colid(idx1, idx2)
+        tm1 = tm1 * 2
+    Loop
+
+    ' 4. (col And 128, col And 64) -> (0~1, 0~1) 정규화
+    idx1 = (col And 128) \ 128
+    idx2 = (col And 64) \ 64
+    
+    tm1 = 1
+    Do While tm1 <= 128
+        tm2 = 1
+        Do While tm2 <= 128
+            colid2(target, tm1, tm2) = colid(idx1, idx2)
+            tm2 = tm2 * 2
+        Loop
+        tm1 = tm1 * 2
+    Loop
 End Sub
+
+
 Sub initGxMode2(dest As PictureBox, Siz As Long)
 mode1 = False
 Form1.Picture1.AutoRedraw = True
@@ -124,7 +168,7 @@ With bb.Header
 End With
 destW = dest.ScaleWidth
 destH = dest.ScaleHeight
-desthdc = dest.hdc
+desthdc = dest.hDC
 desthimg = dest.Image.Handle
 initCol
 dh = 144 * Siz

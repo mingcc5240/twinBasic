@@ -283,7 +283,7 @@ End If
 
 If Clcount > 70223 Then
 Mhz = Mhz + 1
-frmCheat.ChkCheats
+'frmCheat.ChkCheats
 Clcount = Clcount - 70224
 'draw screen
 cllc = cllc - 70224
@@ -303,38 +303,85 @@ Wend
 End Sub
 
 
+'Sub utimer(cycles As Long)
+' Dim timerAtts As Long
+' Dim overflow As Boolean
+' Dim tem As Long
+ 
+'    timerAtts = readM(65287) '0xFF07
+' 
+'    m_DividerVariable = m_DividerVariable + cycles
+'    
+'    If (timerAtts And 4) Then
+'        m_TimerVariable = m_TimerVariable + cycles
+'        
+'        If (m_TimerVariable >= m_CurrentClockSpeed) Then
+'            m_TimerVariable = 0
+'            overflow = False
+'            tem = readM(65285) '0xff05
+'            If (tem = 255) Then overflow = True
+'            RAM(65285, 0) = RAM(65285, 0) + 1
+'             
+'            If (overflow) Then
+'                RAM(65285, 0) = RAM(65286, 0)
+'                tem = readM(65295) '0xff0f
+'                tem = tem Or 4   'interrupt routine
+'                WriteM 65295, tem
+'            End If
+'        End If
+'    
+'    End If
+    
+'    If (m_DividerVariable >= 256) Then
+'        m_DividerVariable = 0
+'        RAM(65284, 0) = RAM(65284, 0) + 1
+'    End If
+'End Sub
 Sub utimer(cycles As Long)
- Dim timerAtts As Long
- Dim overflow As Boolean
- Dim tem As Long
- 
-    timerAtts = readM(65287) '0xFF07
- 
+    Dim timerAtts As Long
+    Dim tem As Long
+    
+    ' 1. DIV 레지스터 업데이트 (256 사이클마다 +1)
     m_DividerVariable = m_DividerVariable + cycles
-    
-    If (timerAtts And 4) Then
-        m_TimerVariable = m_TimerVariable + cycles
-        
-        If (m_TimerVariable >= m_CurrentClockSpeed) Then
-            m_TimerVariable = 0
-            overflow = False
-            tem = readM(65285) '0xff05
-            If (tem = 255) Then overflow = True
-            RAM(65285, 0) = RAM(65285, 0) + 1
-             
-            If (overflow) Then
-                RAM(65285, 0) = RAM(65286, 0)
-                tem = readM(65295) '0xff0f
-                tem = tem Or 4   'interrupt routine
-                WriteM 65295, tem
-            End If
-        End If
-    
+    If m_DividerVariable >= 256 Then
+        m_DividerVariable = m_DividerVariable - 256
+        RAM(65284, 0) = (RAM(65284, 0) + 1) And 255  ' 0xFF04 (DIV)
     End If
     
-    If (m_DividerVariable >= 256) Then
-        m_DividerVariable = 0
-        RAM(65284, 0) = RAM(65284, 0) + 1
+    ' 2. TAC 레지스터 읽기 (0xFF07)
+    timerAtts = readM(65287)
+    
+    ' TAC Bit 2(Enable)가 1일 때만 작동
+    If (timerAtts And 4) <> 0 Then
+        ' TAC Bit 0~1에 따른 클럭 속도 결정
+        Select Case (timerAtts And 3)
+            Case 0: m_CurrentClockSpeed = 1024 ' 4096 Hz
+            Case 1: m_CurrentClockSpeed = 16   ' 262144 Hz
+            Case 2: m_CurrentClockSpeed = 64   ' 65536 Hz
+            Case 3: m_CurrentClockSpeed = 256  ' 16384 Hz
+        End Select
+        
+        ' 타이머 사이클 누적
+        m_TimerVariable = m_TimerVariable + cycles
+        
+        ' 지정된 클럭 속도 도달 시 반복 처리
+        Do While m_TimerVariable >= m_CurrentClockSpeed
+            m_TimerVariable = m_TimerVariable - m_CurrentClockSpeed  ' 잔여 사이클 보존
+            
+            tem = readM(65285) ' 0xFF05 (TIMA)
+            
+            If tem = 255 Then
+                ' 오버플로 시 TMA(0xFF06) 값 복사 및 인터럽트 발생
+                WriteM 65285, readM(65286)
+                
+                ' 0xFF0F (IF) Bit 2 (Timer Interrupt) 켜기
+                tem = readM(65295) Or 4
+                WriteM 65295, tem
+            Else
+                ' TIMA + 1
+                WriteM 65285, (tem + 1) And 255
+            End If
+        Loop
     End If
 End Sub
 
@@ -576,12 +623,12 @@ setC True
 setN False
 setH False
 Case &H38     ' JR c, disp
-jr pb, getC
+ jr pb, getC
 Case &H39      ' Add HL, sp
-addHL sp \ 256, sp And 256
+ addHL sp \ 256, sp And 255
 Case &H3A    ' LDD  A,(HL)     '     ' ---- special (old remapped ld a,(nnnn))
-A = readM(H * 256 + L)
-dec16 H, L
+ A = readM(H * 256 + L)
+ dec16 H, L
 Case &H3B    ' DEC  SP
 sp = sp - 1
 If sp = -1 Then sp = 65535
@@ -1160,9 +1207,12 @@ Case &HEF     ' RST  28H
 rst 40
 Case &HF0     ' LD     'A,($FF00+nn) ---- special (old ret p)
 A = readM(65280 + pb)
+
 Case &HF1     ' POP  AF
-pop F
-pop A
+ pop F
+ pop A
+ F = F And &HF0
+ 
 Case &HF2     ' LD     'A,(C)     '     '  ---- special (old jp p,nnnn)
 A = readM(65280 + C)
 Case &HF3 'DI
@@ -1176,23 +1226,49 @@ Case &HF6     ' OR     'nn
 zor pb
 Case &HF7     ' RST  30H
 rst 48
-Case &HF8     ' LD     'HL,SP+dd     '  ---- special (old ret m) (nocash corrected)
-memptr = pb
-If memptr > 127 Then memptr = memptr - 256
-memval = (sp + memptr) And 65535
-        If memptr >= 0 Then
-           setC sp > memval
-           setH ((sp Xor memptr Xor memval) And 4096) > 0
-           H = memval \ 256
-           L = memval And 255
-        Else
-           setC sp > memval
-           setH ((sp Xor memptr Xor memval) And 4096) > 0
-           H = memval \ 256
-           L = memval And 255
-        End If
-setZ False
-setN False
+
+'Case &HF8     ' LD     'HL,SP+dd     '  ---- special (old ret m) (nocash corrected)
+'memptr = pb
+'If memptr > 127 Then memptr = memptr - 256
+'memval = (sp + memptr) And 65535
+'        If memptr >= 0 Then
+'           setC sp > memval
+'           setH ((sp Xor memptr Xor memval) And 4096) > 0
+'           H = memval \ 256
+'           L = memval And 255
+'        Else
+'           setC sp > memval
+'           setH ((sp Xor memptr Xor memval) And 4096) > 0
+'           H = memval \ 256
+'           L = memval And 255
+'        End If
+'setZ False
+'setN False
+Case &HF8     ' LD HL, SP+e8
+    Dim rawByte As Long
+    Dim spLow As Long
+    
+    ' 1. 원본 8비트 피연산자(pb)와 SP 하위 바이트 추출
+    rawByte = pb And 255
+    spLow = sp And 255
+
+    ' 2. H, C 플래그 계산 (8비트 덧셈 오버플로 기준)
+    setH ((spLow And 15) + (rawByte And 15)) > 15
+    setC (spLow + rawByte) > 255
+
+    ' 3. 부호 확장 (Sign Extension: -128 ~ 127)
+    memptr = rawByte
+    If memptr > 127 Then memptr = memptr - 256
+
+    ' 4. HL 레지스터에 결과값 저장 (SP 자체는 유지)
+    memval = (CLng(sp) + memptr) And 65535
+    H = memval \ 256
+    L = memval And 255
+
+    ' 5. Z, N 플래그 리셋
+    setZ False
+    setN False
+    
 Case &HF9     ' LD     'SP,HL
 sp = H * 256 + L
 Case &HFA     ' LD     'A,(nnnn)     '  ---- special (old jp m,nnnn)

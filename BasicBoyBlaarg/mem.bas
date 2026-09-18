@@ -138,6 +138,8 @@ End If
         Case 65351, 65352, 65353
             RAM(memptr, 0) = Value
             ccolid2 CByte(Value), memptr - 65351
+        Case 65284
+            RAM(65284, 0) = 0
         Case 65287 'timer
             RAM(memptr, 0) = Value
             Select Case Value And 3
@@ -331,7 +333,7 @@ If Len(ro) > 0 Then
 ReDim tRam(Rasn(rominfo.ramsize) * 8192 - 1)
 CopyMemory tRam(0), bRam(0, 0), UBound(tRam) + 1
 Open ro For Binary As #1
-Put #1, , tRam
+Put #1,, tRam
 Close #1
 enf:
 Close #1
@@ -348,7 +350,7 @@ ro = "gameboy.sav"
 
 ReDim tRam(Rasn(rominfo.ramsize) * 8192 - 1)
 Open ro For Binary As #1
-Get #1, , tRam
+Get #1,, tRam
 Close #1
 CopyMemory bRam(0, 0), tRam(0), UBound(tRam) + 1
 enf:
