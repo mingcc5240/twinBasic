@@ -16,7 +16,7 @@ Option Explicit
 Public A As Long
 Public b As Long
 Public C As Long
-Public D As Long
+Public d As Long
 Public E As Long
 Public H As Long
 Public L As Long
@@ -47,85 +47,91 @@ Global m_TimerVariable As Long
 
 
 Sub setZ(Val As Boolean)
-If Val Then F = F Or 128 Else F = F And 127
+  If Val Then F = F Or 128 Else F = F And 127
 End Sub
+
 Sub setN(Val As Boolean)
-If Val Then F = F Or 64 Else F = F And 191
+  If Val Then F = F Or 64 Else F = F And 191
 End Sub
+
 Sub setH(Val As Boolean)
-If Val Then F = F Or 32 Else F = F And 223
+  If Val Then F = F Or 32 Else F = F And 223
 End Sub
+
 Sub setC(Val As Boolean)
-If Val Then F = F Or 16 Else F = F And 239
+  If Val Then F = F Or 16 Else F = F And 239
 End Sub
 
 Function getZ() As Boolean
-getZ = F And 128
+  getZ = F And 128
 End Function
+
 Function GetN() As Boolean
-GetN = F And 64
+ GetN = F And 64
 End Function
+
 Function getH() As Boolean
-getH = F And 32
+ getH = F And 32
 End Function
+
 Function getC() As Boolean
-getC = F And 16
+ getC = F And 16
 End Function
 
 Public Sub reset()
-QueryPerformanceFrequency curFreq  'Get the timer frequency
-curFreq = curFreq / 1000 ' in ms
-hline = -1
-smp = 0
-IME = True
-If GBM = 0 Then A = &H1 Else A = &H11
-'- GB \ SGB , &hFF-GBP, &h11-GBC
-F = &HB0
-b = 0
-C = &H13
-D = 0
-E = &HD8
-H = 1
-L = &H4D
-pc = &H100
-sp = 65534
+    QueryPerformanceFrequency curFreq  'Get the timer frequency
+    curFreq = curFreq / 1000 ' in ms
+    hline = -1
+    smp = 0
+    IME = True
+    If GBM = 0 Then A = &H1 Else A = &H11
+    '- GB \ SGB , &hFF-GBP, &h11-GBC
+    F = &HB0
+    b = 0
+    C = &H13
+    d = 0
+    E = &HD8
+    H = 1
+    L = &H4D
+    pc = &H100
+    sp = 65534
 
-cldr = 255
-Clm0 = 251
-clm3 = 79
-cllc = 455
-cpuS = 0
-WriteM 65285, &H0   ' TIMA
-WriteM 65286, &H0   ' TMA
-WriteM 65287, &H0   ' TAC
-WriteM 65296, &H80  ' NR10
-WriteM 65297, &HBF  ' NR11
-WriteM 65298, &HF3  ' NR12
-WriteM 65300, &HBF  ' NR14
-WriteM 65302, &H3F  ' NR21
-WriteM 65303, &H0   ' NR22
-WriteM 65305, &HBF  ' NR24
-WriteM 65306, &H7F  ' NR30
-WriteM 65307, &HFF  ' NR31
-WriteM 65308, &H9F  ' NR32
-WriteM 65310, &HBF  ' NR33
-WriteM 65312, &HFF  ' NR41
-WriteM 65313, &H0   ' NR42
-WriteM 65314, &H0   ' NR43
-WriteM 65315, &HBF  ' NR30
-WriteM 65316, &H77  ' NR50
-WriteM 65317, &HF3  ' NR51
-WriteM 65318, &HF1  '- GB, &HF0 - SGB ' NR52
-WriteM 65344, &H91  ' LCDC
-WriteM 65346, &H0   ' SCY
-WriteM 65347, &H0   ' SCX
-WriteM 65349, &H0   ' LYC
-WriteM 65351, &HE4  ' BGP
-WriteM 65352, &HE4  ' OBP0
-WriteM 65353, &HE4  ' OBP1
-WriteM 65354, &H0   ' WY
-WriteM 65355, &H0   ' WX
-WriteM 65535, &H0   ' IE
+    cldr = 255
+    Clm0 = 251
+    clm3 = 79
+    cllc = 455
+    cpuS = 0
+    WriteM 65285, &H0   ' TIMA
+    WriteM 65286, &H0   ' TMA
+    WriteM 65287, &H0   ' TAC
+    WriteM 65296, &H80  ' NR10
+    WriteM 65297, &HBF  ' NR11
+    WriteM 65298, &HF3  ' NR12
+    WriteM 65300, &HBF  ' NR14
+    WriteM 65302, &H3F  ' NR21
+    WriteM 65303, &H0   ' NR22
+    WriteM 65305, &HBF  ' NR24
+    WriteM 65306, &H7F  ' NR30
+    WriteM 65307, &HFF  ' NR31
+    WriteM 65308, &H9F  ' NR32
+    WriteM 65310, &HBF  ' NR33
+    WriteM 65312, &HFF  ' NR41
+    WriteM 65313, &H0   ' NR42
+    WriteM 65314, &H0   ' NR43
+    WriteM 65315, &HBF  ' NR30
+    WriteM 65316, &H77  ' NR50
+    WriteM 65317, &HF3  ' NR51
+    WriteM 65318, &HF1  '- GB, &HF0 - SGB ' NR52
+    WriteM 65344, &H91  ' LCDC
+    WriteM 65346, &H0   ' SCY
+    WriteM 65347, &H0   ' SCX
+    WriteM 65349, &H0   ' LYC
+    WriteM 65351, &HE4  ' BGP
+    WriteM 65352, &HE4  ' OBP0
+    WriteM 65353, &HE4  ' OBP1
+    WriteM 65354, &H0   ' WY
+    WriteM 65355, &H0   ' WX
+    WriteM 65535, &H0   ' IE
 
  utu = True
 End Sub
@@ -477,8 +483,8 @@ Public Sub InitCPU()
 End Sub
 
 Sub checkregs()
-If A > 255 Or b > 255 Or C > 255 Or D > 255 Or E > 255 Or F > 255 Or H > 255 Or L > 255 Or sp > 65535 Or pc > 65535 Or _
-        A < 0 Or b < 0 Or C < 0 Or D < 0 Or E < 0 Or F < 0 Or H < 0 Or L < 0 Or sp < 0 Or pc < 0 Then
+If A > 255 Or b > 255 Or C > 255 Or d > 255 Or E > 255 Or F > 255 Or H > 255 Or L > 255 Or sp > 65535 Or pc > 65535 Or _
+        A < 0 Or b < 0 Or C < 0 Or d < 0 Or E < 0 Or F < 0 Or H < 0 Or L < 0 Or sp < 0 Or pc < 0 Then
 Stop
 End If
 
@@ -540,27 +546,27 @@ Else
 End If
 Case &H11     ' LD DE, nnnn
 E = pb
-D = pb
+d = pb
 Case &H12     ' LD (DE), a
-WriteM D * 256 + E, A
+WriteM d * 256 + E, A
 Case &H13     ' INC DE
-inc16 D, E
+inc16 d, E
 Case &H14     ' INC d
-inc D
+inc d
 Case &H15     ' DEC d
-dec D
+dec d
 Case &H16     ' LD d, nn
-D = pb
+d = pb
 Case &H17     ' RLA
 rla
 Case &H18     ' JR disp
 jr pb
 Case &H19     ' Add HL, DE
-addHL D, E
+addHL d, E
 Case &H1A    ' LD     'A,(DE)
-A = readM(D * 256 + E)
+A = readM(d * 256 + E)
 Case &H1B    ' DEC  DE
-dec16 D, E
+dec16 d, E
 Case &H1C    ' INC  E
 inc E
 Case &H1D     ' DEC  E
@@ -657,9 +663,9 @@ b = C
 Case &H61     ' LD     'H,C
 H = C
 Case &H42     ' LD     'B,D     '     '     '     '     '     '     '     '
-b = D
+b = d
 Case &H62     ' LD     'H,D
-H = D
+H = d
 Case &H43     ' LD     'B,E     '     '     '     '     '     '     '     '
 b = E
 Case &H63     ' LD     'H,E
@@ -689,9 +695,9 @@ Case &H49     ' LD     'C,C     '     '     '     '     '     '     '     '
 Case &H69     ' LD     'L,C
 L = C
 Case &H4A    ' LD     'C,D     '     '     '     '     '     '     '     '
-C = D
+C = d
 Case &H6A     ' LD     'L,D
-L = D
+L = d
 Case &H4B    ' LD     'C,E     '     '     '     '     '     '     '     '
 C = E
 Case &H6B     ' LD     'L,E
@@ -713,35 +719,35 @@ C = A
 Case &H6F     ' LD     'L,A
 L = A
 Case &H50     ' LD     'D,B     '     '     '     '     '     '     '     '
-D = b
+d = b
 Case &H70     ' LD     '(HL),B
 WriteM H * 256 + L, b
 Case &H51     ' LD     'D,C     '     '     '     '     '     '     '     '
-D = C
+d = C
 Case &H71     ' LD     '(HL),C
 WriteM H * 256 + L, C
 Case &H52     ' LD     'D,D     '     '     '     '     '     '     '     '
 'Stop 'nop
 Case &H72     ' LD     '(HL),D
-WriteM (H * 256 + L), D
+WriteM (H * 256 + L), d
 Case &H53     ' LD     'D,E     '     '     '     '     '     '     '     '
-D = E
+d = E
 Case &H73     ' LD     '(HL),E
 WriteM (H * 256 + L), E
 Case &H54     ' LD     'D,H     '     '     '     '     '     '     '     '
-D = H
+d = H
 Case &H74     ' LD     '(HL),H
 WriteM (H * 256 + L), H
 Case &H55     ' LD     'D,L     '     '     '     '     '     '     '     '
-D = L
+d = L
 Case &H75     ' LD     '(HL),L
 WriteM (H * 256 + L), L
 Case &H56     ' LD     'D,(HL)     '     '     '     '     '     '     '
-D = readM(H * 256 + L)
+d = readM(H * 256 + L)
 Case &H76     ' HALT
 halt
 Case &H57     ' LD     'D,A     '     '     '     '     '     '     '     '
-D = A
+d = A
 Case &H77     ' LD     '(HL),A
 WriteM (H * 256 + L), A
 Case &H58     ' LD     'E,B     '     '     '     '     '     '     '     '
@@ -753,9 +759,9 @@ E = C
 Case &H79     ' LD     'A,C
 A = C
 Case &H5A    ' LD     'E,D     '     '     '     '     '     '     '     '
-E = D
+E = d
 Case &H7A     ' LD     'A,D
-A = D
+A = d
 Case &H5B    ' LD     'E,E     '     '     '     '     '     '     '     '
 'Stop 'nop
 Case &H7B     ' LD     'A,E
@@ -785,9 +791,9 @@ add C
 Case &HA1     ' AND  C
 zand C
 Case &H82     ' ADD  A,D     '     '     '     '     '     '     '     '
-add D
+add d
 Case &HA2     ' AND  D
-zand D
+zand d
 Case &H83     ' ADD  A,E     '     '     '     '     '     '     '     '
 add E
 Case &HA3     ' AND  E
@@ -817,9 +823,9 @@ adc C
 Case &HA9     ' XOR  C
 zxor C
 Case &H8A    ' ADC  A,D     '     '     '     '     '     '     '     '
-adc D
+adc d
 Case &HAA     ' XOR  D
-zxor D
+zxor d
 Case &H8B    ' ADC  A,E     '     '     '     '     '     '     '     '
 adc E
 Case &HAB     ' XOR  E
@@ -849,9 +855,9 @@ zsub C
 Case &HB1     ' OR     'C
 zor C
 Case &H92     ' SUB  D     '     '     '     '     '     '     '     '     '
-zsub D
+zsub d
 Case &HB2     ' OR     'D
-zor D
+zor d
 Case &H93     ' SUB  E     '     '     '     '     '     '     '     '     '
 zsub E
 Case &HB3     ' OR     'E
@@ -881,9 +887,9 @@ sbc C
 Case &HB9     ' CP     'C
 cp C
 Case &H9A    ' SBC  A,D     '     '     '     '     '     '     '     '
-sbc D
+sbc d
 Case &HBA     ' CP     'D
-cp D
+cp d
 Case &H9B    ' SBC  A,E     '     '     '     '     '     '     '     '
 sbc E
 Case &HBB     ' CP     'E
@@ -938,7 +944,7 @@ Select Case memval
     Case &H1   'RLC  C
     rlc C
     Case &H2   'RLC  D
-    rlc D
+    rlc d
     Case &H3   'RLC  E
     rlc E
     Case &H4   'RLC  H
@@ -956,7 +962,7 @@ Select Case memval
     Case &H9   'RRC  C
     rrc C
     Case &HA   'RRC  D
-    rrc D
+    rrc d
     Case &HB   'RRC  E
     rrc E
     Case &HC   'RRC  H
@@ -974,7 +980,7 @@ Select Case memval
     Case &H11  'RL     'C
     rl C
     Case &H12  'RL     'D
-    rl D
+    rl d
     Case &H13  'RL     'E
     rl E
     Case &H14  'RL     'H
@@ -992,7 +998,7 @@ Select Case memval
     Case &H19  'RR     'C
     rr C
     Case &H1A  'RR     'D
-    rr D
+    rr d
     Case &H1B  'RR     'E
     rr E
     Case &H1C  'RR     'H
@@ -1010,7 +1016,7 @@ Select Case memval
     Case &H21  'SLA  C
     sla C
     Case &H22  'SLA  D
-    sla D
+    sla d
     Case &H23  'SLA  E
     sla E
     Case &H24        'SLA  H
@@ -1028,7 +1034,7 @@ Select Case memval
     Case &H29  'SRA  C
     sra C
     Case &H2A  'SRA  D
-    sra D
+    sra d
     Case &H2B  'SRA  E
     sra E
     Case &H2C  'SRA  H
@@ -1046,7 +1052,7 @@ Select Case memval
     Case &H31  'SWAP C     '     '     '  ---- special ""
     swap C
     Case &H32  'SWAP D     '     '     '  ---- special ""
-    swap D
+    swap d
     Case &H33  'SWAP E     '     '     '  ---- special ""
     swap E
     Case &H34  'SWAP H     '     '     '  ---- special ""
@@ -1064,7 +1070,7 @@ Select Case memval
     Case &H39  'SRL  C
     srl C
     Case &H3A  'SRL  D
-    srl D
+    srl d
     Case &H3B  'SRL  E
     srl E
     Case &H3C  'SRL  H
@@ -1084,7 +1090,7 @@ Select Case memval
     Case &H41 '+n*38  BIT  n,C
     bit C, (BITT(memval And 56))
     Case &H42 '+n*38  BIT  n,D
-    bit D, (BITT(memval And 56))
+    bit d, (BITT(memval And 56))
     Case &H43 '+n*38  BIT  n,E
     bit E, (BITT(memval And 56))
     Case &H44 '+n*38  BIT  n,H
@@ -1101,7 +1107,7 @@ Select Case memval
     Case &H81 '+ n * 38 'RES  n,C
     res C, (SETT(memval And 56))
     Case &H82 '+ n * 38 'RES  n,D
-    res D, (SETT(memval And 56))
+    res d, (SETT(memval And 56))
     Case &H83 '+ n * 38 'RES  n,E
     res E, (SETT(memval And 56))
     Case &H84 '+ n * 38 'RES  n,H
@@ -1119,7 +1125,7 @@ Select Case memval
     Case &HC1 '+ n * 38 'SET  n,C
     zset C, (BITT(memval And 56))
     Case &HC2 '+ n * 38 'SET  n,D
-    zset D, (BITT(memval And 56))
+    zset d, (BITT(memval And 56))
     Case &HC3 '+ n * 38 'SET  n,E
     zset E, (BITT(memval And 56))
     Case &HC4 '+ n * 38 'SET  n,H
@@ -1147,7 +1153,7 @@ Case &HD0     ' RET  NC
 ret Not getC
 Case &HD1     ' POP  DE
 pop E
-pop D
+pop d
 Case &HD2     ' JP     'NC,nnnn
 jp pw, Not getC
 Case &HD3     ' -     '     '     '     '     '  ---- ??? (old out (nn),a)
@@ -1155,7 +1161,7 @@ Stop
 Case &HD4     ' CALL NC,nnnn
 zcall pw, Not getC
 Case &HD5     ' PUSH DE
-push D
+push d
 push E
 Case &HD6     ' SUB  nn
 zsub pb

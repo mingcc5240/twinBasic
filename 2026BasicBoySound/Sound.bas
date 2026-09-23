@@ -49,11 +49,11 @@ Private Declare Function waveOutReset Lib "winmm.dll" (ByVal hwo As Long) As Lon
 
 Private Const SAMPLE_RATE As Long = 44100
 ' 1개 버퍼 블록 크기: 1024 샘플 (약 23.2ms)
-Private Const BUFFER_SAMPLES As Long = 3 * 1024 + 256 '1024
+Private Const BUFFER_SAMPLES As Long = 3 * 1024 '1024
 ' 16비트 Stereo = 샘플당 4바이트 (Left 2Byte + Right 2Byte)
 Private Const BUFFER_BYTES As Long = BUFFER_SAMPLES * 4
 
-' ★ 링 버퍼 슬롯 개수 (8개 슬롯 = 약 185ms 오디오 큐 윈도우 제공)
+' ★ 링 버퍼 슬롯 개수
 Private Const NUM_BUFFERS As Long = 2
 
 Private hWaveOut As Long
@@ -78,8 +78,23 @@ Private Ch3_Freq As Long, Ch3_VolShift As Byte, Ch3_Phase As Single, Ch3_RawFreq
 Private WaveRAM(0 To 15) As Byte
 
 ' Channel 4 (Noise)
-Public Ch4_Enable As Boolean
-Private Ch4_Vol As Byte, Ch4_Freq As Single, Ch4_Phase As Single, Ch4_LFSR As Long, Ch4_Step7 As Boolean
+'Public Ch4_Enable As Boolean
+'Private Ch4_Vol As Byte, Ch4_Freq As Single, Ch4_Phase As Single, Ch4_LFSR As Long, Ch4_Step7 As Boolean
+' --- Channel 4 (Noise) 제어 변수 선언 ---
+Public Ch4_Enable As Boolean       ' 채널 활성화 여부
+Public Ch4_Vol As Long             ' 초기 설정 볼륨 (0~15)
+Public Ch4_VolCurrent As Long      ' 현재 재생 중인 실제 볼륨 (0~15)
+Public Ch4_EnvDir As Long          ' 엔벨로프 방향 (0 = 감소/Fade Out, 1 = 증가/Fade In)
+Public Ch4_EnvPeriod As Long       ' 엔벨로프 변화 주기 (0 = 엔벨로프 비활성화)
+Public Ch4_EnvTimer As Long        ' 엔벨로프 내부 타이머 카운터
+
+Public Ch4_LengthEnable As Boolean ' 음 길이 카운터 활성화 여부 (NR44 Bit 6)
+Public Ch4_LengthCnt As Long       ' 남아있는 음 길이 카운터 (0~64)
+
+Public Ch4_LFSR As Long            ' 15-bit LFSR 시프트 레지스터
+Public Ch4_Step7 As Boolean        ' 7-bit 모드 여부 (True = Short Width / 7비트, False = 15비트)
+Public Ch4_Freq As Double          ' 계산된 노이즈 재생 주파수 (Hz)
+Public Ch4_Phase As Double         ' 샘플링 오디오 누적 페이즈
 
 ' Panning & Master Control (NR50, NR51, NR52)
 Public SoundEnabled As Boolean
@@ -173,11 +188,11 @@ Public Sub updatesnd(clc As Long)
 
         ' --- Channel 1 (Square 1) ---
         If Ch1_Enable And (Ch1_Freq > 0) And (Ch1_Vol > 0) Then
-            Ch1_Phase = Ch1_Phase + (CDbl(Ch1_Freq) / sampleRateF)
-            If Ch1_Phase >= 1# Then Ch1_Phase = Ch1_Phase - Int(Ch1_Phase)
+            Ch1_Phase = Ch1_Phase + (CDbl(Ch1_Freq) * 8# / sampleRateF)
+            If Ch1_Phase >= 8# Then Ch1_Phase = Ch1_Phase - Int(Ch1_Phase)
             
             Dim step1 As Long
-            step1 = Int(Ch1_Phase * 8#) And 7
+            step1 = Int(Ch1_Phase) And 7
             
             If DutyPatterns(Ch1_DutyIdx, step1) <> 0 Then
                 ch1Sig = CDbl(Ch1_Vol) * 400#
@@ -188,11 +203,11 @@ Public Sub updatesnd(clc As Long)
 
         ' --- Channel 2 (Square 2) ---
         If Ch2_Enable And (Ch2_Freq > 0) And (Ch2_Vol > 0) Then
-            Ch2_Phase = Ch2_Phase + (CDbl(Ch2_Freq) / sampleRateF)
-            If Ch2_Phase >= 1# Then Ch2_Phase = Ch2_Phase - Int(Ch2_Phase)
+            Ch2_Phase = Ch2_Phase + (CDbl(Ch2_Freq) * 8# / sampleRateF)
+            If Ch2_Phase >= 8# Then Ch2_Phase = Ch2_Phase - Int(Ch2_Phase)
             
             Dim step2 As Long
-            step2 = Int(Ch2_Phase * 8#) And 7
+            step2 = Int(Ch2_Phase) And 7
             
             If DutyPatterns(Ch2_DutyIdx, step2) <> 0 Then
                 ch2Sig = CDbl(Ch2_Vol) * 400#
@@ -202,35 +217,103 @@ Public Sub updatesnd(clc As Long)
         End If
 
         ' --- Channel 3 (Wave) ---
-        If Ch3_Enable And (Ch3_Freq > 0) And (Ch3_VolShift > 0) Then
+        'If Ch3_Enable And (Ch3_Freq > 0) And (Ch3_VolShift > 0) Then
+        '    Ch3_Phase = Ch3_Phase + (CDbl(Ch3_Freq) / sampleRateF)
+        '    If Ch3_Phase >= 1# Then Ch3_Phase = Ch3_Phase - Int(Ch3_Phase)
+        '
+         '   Dim waveois As Double
+         '
+         '   wavpos = Ch3_Phase * 32#
+         '
+         '   Dim idx0 As Long, idx1 As Long
+         '   Dim frac As Double
+         '   idx0 = Int(wavePos) And 31
+         '   idx1 = (idx0 + 1) And 31
+         '   frac = wavePos - CDbl(Int(wavePos))
+
+          '  Dim s0 As Double, s1 As Double
+          '  s0 = CDbl(GetWaveSample(idx0)) - 7.5
+          '  s1 = CDbl(GetWaveSample(idx1)) - 7.5
+          '
+          '  ch3Sig = s0 + (s1 - s0) * frac
+
+           ' Select Case Ch3_VolShift
+            '    Case 1: ch3Sig = ch3Sig * 300#
+            '    Case 2: ch3Sig = ch3Sig * 150#
+            '    Case 3: ch3Sig = ch3Sig * 75#
+            '    Case Else: ch3Sig = 0#
+            'End Select
+        'End If
+
+         ' --- Channel 3 (Wave) 최종 수정 ---
+        If Ch3_Enable And (Ch3_Freq > 0#) Then
+            ' 1. 주파수 누적 (Ch3_Freq가 Hz 단위일 때 1주기=1.0 기준 계산)
             Ch3_Phase = Ch3_Phase + (CDbl(Ch3_Freq) / sampleRateF)
             If Ch3_Phase >= 1# Then Ch3_Phase = Ch3_Phase - Int(Ch3_Phase)
             
-            Dim wavePos As Double
-            wavePos = Ch3_Phase * 32#
+            ' 2. 32개 샘플 인덱스 추출 (0 ~ 31)
+            Dim sampleIdx As Long
+            sampleIdx = Int(Ch3_Phase * 32#) And 31
             
-            Dim idx0 As Long, idx1 As Long
-            Dim frac As Double
-            idx0 = Int(wavePos) And 31
-            idx1 = (idx0 + 1) And 31
-            frac = wavePos - CDbl(Int(wavePos))
-
-            Dim s0 As Double, s1 As Double
-            s0 = CDbl(GetWaveSample(idx0)) - 7.5
-            s1 = CDbl(GetWaveSample(idx1)) - 7.5
+            ' 3. Wave RAM에서 4비트 Raw 샘플 읽기 (0 ~ 15)
+            Dim raw4bit As Long
+            raw4bit = GetWaveSample(sampleIdx) And &HF
             
-            ch3Sig = s0 + (s1 - s0) * frac
-
+            ' 4. NR32 볼륨 시프트 처리 (하드웨어 비트 시프트 방식 적용)
             Select Case Ch3_VolShift
-                Case 1: ch3Sig = ch3Sig * 300#
-                Case 2: ch3Sig = ch3Sig * 150#
-                Case 3: ch3Sig = ch3Sig * 75#
-                Case Else: ch3Sig = 0#
+                Case 1 ' 100% Volume (Shift 0)
+                    ' Shift 없음
+                Case 2 ' 50% Volume (Shift 1)
+                    raw4bit = raw4bit \ 2
+                Case 3 ' 25% Volume (Shift 2)
+                    raw4bit = raw4bit \ 4
+                Case Else ' 0 (Mute) 또는 예외값
+                    raw4bit = 0
             End Select
+            
+            ' 5. 센터값(7.5) 차감 후 증폭 출력 (0~15 범위 -> -7.5 ~ +7.5)
+            ch3Sig = (CDbl(raw4bit) - 7.5) * 300#
+        Else
+            ch3Sig = 0#
         End If
-
+        
         ' --- Channel 4 (Noise) ---
-        If Ch4_Enable And (Ch4_Freq > 0#) Then
+        'If Ch4_Enable And (Ch4_Freq > 0#) Then
+        '    Ch4_Phase = Ch4_Phase + (CDbl(Ch4_Freq) / sampleRateF)
+        '
+        '    If Ch4_Phase >= 1# Then
+        '        Dim shifts As Long
+        '        shifts = Int(Ch4_Phase)
+        '        Ch4_Phase = Ch4_Phase - CDbl(shifts)
+        '
+        '        Dim sCount As Long
+        '        For sCount = 1 To shifts
+        '            Dim bit0 As Long, bit1 As Long, resultBit As Long
+        '            bit0 = Ch4_LFSR And 1
+        '            bit1 = (Ch4_LFSR \ 2) And 1
+        '            resultBit = bit0 Xor bit1
+        '
+        '            Ch4_LFSR = (Ch4_LFSR \ 2) And &H3FFF
+        '            Ch4_LFSR = Ch4_LFSR Or (resultBit * 16384)
+        '
+        '            If Ch4_Step7 Then
+        '                Ch4_LFSR = (Ch4_LFSR And &HFFBF) Or (resultBit * 64)
+        '            End If
+        '        Next sCount
+        '    End If
+        '
+        '   If (Ch4_LFSR And 1) = 0 Then
+        '        ch4Sig = CDbl(Ch4_Vol) * 100#
+        '    Else
+        '        ch4Sig = -CDbl(Ch4_Vol) * 100#
+        '    End If
+        'End If
+
+        ' --- Channel 4 (Noise) 최종 수정 ---
+        If Ch4_Enable And (Ch4_Freq > 0#) And (Ch4_Vol > 0) Then
+            ' 0. LFSR 락업 방지 (LFSR이 0이면 모든 비트를 1로 초기화)
+            If Ch4_LFSR = 0 Then Ch4_LFSR = &H7FFF
+            
             Ch4_Phase = Ch4_Phase + (CDbl(Ch4_Freq) / sampleRateF)
             
             If Ch4_Phase >= 1# Then
@@ -238,29 +321,41 @@ Public Sub updatesnd(clc As Long)
                 shifts = Int(Ch4_Phase)
                 Ch4_Phase = Ch4_Phase - CDbl(shifts)
                 
+                ' 샘플링 레이트 대비 너무 높은 고주파 시 루프 제한
+                If shifts > 100 Then shifts = 100
+                
                 Dim sCount As Long
                 For sCount = 1 To shifts
                     Dim bit0 As Long, bit1 As Long, resultBit As Long
+                    ' LFSR Bit 0과 Bit 1을 XOR
                     bit0 = Ch4_LFSR And 1
                     bit1 = (Ch4_LFSR \ 2) And 1
                     resultBit = bit0 Xor bit1
                     
+                    ' 1비트 Right Shift (15-bit LFSR 유지: 0x3FFF)
                     Ch4_LFSR = (Ch4_LFSR \ 2) And &H3FFF
+                    
+                    ' High Bit (Bit 14)에 XOR 결과 주입
                     Ch4_LFSR = Ch4_LFSR Or (resultBit * 16384)
                     
+                    ' 7-bit 모드 (Short Width Noise): Bit 6에도 동일하게 주입
                     If Ch4_Step7 Then
                         Ch4_LFSR = (Ch4_LFSR And &HFFBF) Or (resultBit * 64)
                     End If
                 Next sCount
             End If
             
-            If (Ch4_LFSR And 1) = 0 Then
-                ch4Sig = CDbl(Ch4_Vol) * 100#
-            Else
+            ' 실제 HW: Bit 0의 반전된 값(Inverted Bit 0)이 DAC로 출력됨
+            ' Bit 0이 1이면 Low(-), 0이면 High(+)
+            If (Ch4_LFSR And 1) <> 0 Then
                 ch4Sig = -CDbl(Ch4_Vol) * 100#
+            Else
+                ch4Sig = CDbl(Ch4_Vol) * 100#
             End If
+        Else
+            ch4Sig = 0#
         End If
-
+        
         ' --- Stereo Panning Matrix (NR51) ---
         outL = 0#: outR = 0#
 
@@ -317,7 +412,7 @@ End Sub
 
 Public Sub setNR12(Val As Long)
     Ch1_Vol = (Val \ 16) And &HF
-    If Ch1_Vol = 0 Then Ch1_Enable = False
+   ' If Ch1_Vol = 0 Then Ch1_Enable = False
 End Sub
 
 Public Sub setNR13(Val As Long)
@@ -340,7 +435,7 @@ End Sub
 
 Public Sub setNR22(Val As Long)
     Ch2_Vol = (Val \ 16) And &HF
-    If Ch2_Vol = 0 Then Ch2_Enable = False
+    'If Ch2_Vol = 0 Then Ch2_Enable = False
 End Sub
 
 Public Sub setNR23(Val As Long)
@@ -391,7 +486,7 @@ Public Sub setNR41(Val As Long): End Sub
 
 Public Sub setNR42(Val As Long)
     Ch4_Vol = (Val \ 16) And &HF
-    If Ch4_Vol = 0 Then Ch4_Enable = False
+   ' If Ch4_Vol = 0 Then Ch4_Enable = False
 End Sub
 
 Public Sub setNR43(Val As Long)
@@ -405,10 +500,38 @@ Public Sub setNR43(Val As Long)
     Ch4_Freq = 524288! / (d * CDbl(2 ^ (s + 1)))
 End Sub
 
+'Public Sub setNR44(Val As Long)
+'    If (Val And &H80) <> 0 Then
+'        Ch4_Enable = True
+'        Ch4_LFSR = &H7FFF
+'    End If
+'End Sub
+
 Public Sub setNR44(Val As Long)
+    ' Bit 6: Length Counter Enable (1 = 음 길이 제한 사용, 0 = 무한 재생)
+   
+    Ch4_LengthEnable = ((Val And &H40) <> 0)
+    
+    ' Bit 7: Trigger (1 = 채널 재시동)
     If (Val And &H80) <> 0 Then
-        Ch4_Enable = True
+        ' 1. DAC 상태 검사 (볼륨 레지스터 NR42의 상위 5비트가 0이면 DAC Off 상태)
+        If (Ch4_Vol = 0) And (Ch4_EnvDir = 0) Then
+            Ch4_Enable = False
+        Else
+            Ch4_Enable = True
+        End If
+        
+        ' 2. LFSR 비트 전체를 1로 리셋 (15-bit All 1s)
         Ch4_LFSR = &H7FFF
+        
+        ' 3. Length Counter가 0(만료)인 상태에서 트리거되면 64로 리셋
+        If Ch4_LengthCnt = 0 Then
+            Ch4_LengthCnt = 64
+        End If
+        
+        ' 4. 볼륨 엔벨로프(Envelope) 타이머 및 현재 볼륨 리셋
+        Ch4_VolCurrent = Ch4_Vol
+        Ch4_EnvTimer = Ch4_EnvPeriod
     End If
 End Sub
 

@@ -304,7 +304,9 @@ fs9.Checked = fskip = 10 And fmode = 0
    'BITT(0) = 1, SETT(0) = 254 0b1111 1110
    'BITT(1) = 2  SETT(1) = 253
    objv = True
+   
    Call Sound.InitSound
+   mode1 = False
 End Sub
 
 Private Sub Form_Unload(Cancel As Integer)

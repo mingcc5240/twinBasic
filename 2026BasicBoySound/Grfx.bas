@@ -23,7 +23,8 @@ Dim colid2(2, 128, 128) As Long
 'Public scrb As clsDDSurface7
 'Dim re2 As DxVBLib.RECT
 Public FULLSCREEN As Boolean
-Dim TCol As Long, mode1 As Boolean
+Dim TCol As Long
+Global mode1 As Boolean
 Dim i As Long, i2 As Long, X As Long, Y As Long, tilemap As Long, tileloc As Long, tileptr As Long
 Dim xoffset As Long, yoffset As Long, TileData As Long, tileend As Long
 Dim LByte As Long, HByte As Long, SpriteY As Long
@@ -42,35 +43,35 @@ Public Sub DrawScreen() 'Using Api and SetBits/StrechBits
     FPS = FPS + 1
     
     If fmode = 0 Then 'frame skip mode 1(act skip(x1(1),x2(2),x3(3),x4(4),x5(5),x6(6))
-    If FPS Mod fskip > 0 Then
-    Skipf = True
-    If lfp Then
-    Do
-    QueryPerformanceCounter CurEnd
-    dblResult = (CurEnd - curStart) / curFreq
-    Loop While dblResult < 16.6
-    End If
-    Exit Sub
-    End If
+     If FPS Mod fskip > 0 Then
+       Skipf = True
+       If lfp Then
+        Do
+            QueryPerformanceCounter CurEnd
+            dblResult = (CurEnd - curStart) / curFreq
+        Loop While dblResult < 16.6
+       End If
+      Exit Sub
+     End If
     Else 'frame skip mode 2(act skip(x1.20(6),x1.25(5),x1,3(4),x1.5(3))
-    If FPS Mod fskip = 0 Then
-    Skipf = True
-    If lfp Then
-    Do
-    QueryPerformanceCounter CurEnd
-    dblResult = (CurEnd - curStart) / curFreq
-    Loop While dblResult < 16.6
-    End If
-    Exit Sub
-    End If
+     If FPS Mod fskip = 0 Then
+         Skipf = True
+        If lfp Then
+          Do
+             QueryPerformanceCounter CurEnd
+             dblResult = (CurEnd - curStart) / curFreq
+          Loop While dblResult < 16.6
+        End If
+       Exit Sub
+     End If
     End If
     
-   If mode1 Then
+   'If mode1 Then
    
-   Else
+   'Else
     StretchDIBits desthdc, 0, 0, dw, dh, 0, 0, 160, 144, Vram(0, 0), bb, 0, vbSrcCopy
     Form1.Picture1.Refresh
-   End If
+   'End If
      Skipf = False
     If lfp Then
       Do
