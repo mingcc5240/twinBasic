@@ -58,6 +58,10 @@ Begin VB.Form Form1
    End
    Begin VB.Menu bn 
       Caption         =   "Emulator"
+      Begin VB.Menu mSound 
+         Caption         =   "Enable Sound"
+         Checked         =   -1  'True
+      End
       Begin VB.Menu EGBC 
          Caption         =   "Emulate GBC"
       End
@@ -299,6 +303,7 @@ fs9.Checked = fskip = 10 And fmode = 0
    
    'BITT(0) = 1, SETT(0) = 254 0b1111 1110
    'BITT(1) = 2  SETT(1) = 253
+   objv = True
    Call Sound.InitSound
 End Sub
 
@@ -486,6 +491,11 @@ lfps.Checked = lfp
 SaveSetting "GBE", "CPU", "LFPS", lfp
 End Sub
 
+
+Private Sub mSound_Click()
+   SoundEnabled = Not SoundEnabled
+   mSound.Checked = SoundEnabled
+End Sub
 
 Private Sub Picture1_KeyDown(KeyCode As Integer, Shift As Integer)
  Dim temp As Long, old As Long

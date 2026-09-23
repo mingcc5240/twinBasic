@@ -52,37 +52,127 @@ Dim memptr2 As Long
 Global ro As String
 Global Hdma As Boolean, Hdmal As Long, tHdmal As Long, nwr As Boolean
 
+'Public Function readM(memptr As Long) As Long
+'If GBM = 0 Then
+'    If memptr < 16384 Then
+'            readM = ROM(memptr, 0)      ' Read from ROM
+'    ElseIf memptr < 32768 Then
+'            readM = ROM(memptr - 16384, CurROMBank)      ' Read from ROM
+'    Else
+'            If memptr > 40959 And memptr < 49152 Then
+'            readM = bRam(memptr - 40960, CurRAMBank)    ' Read from sRAM
+'            Else
+'            readM = RAM(memptr, 0)      ' Read from RAM
+'            End If
+'    End If
+'Else
+'    If memptr < 16384 Then
+'            readM = ROM(memptr, 0)      ' Read from ROM
+'    ElseIf memptr < 32768 Then
+'            readM = ROM(memptr - 16384, CurROMBank)      ' Read from ROM
+'    ElseIf memptr < 40960 Then 'read Vram
+'        readM = RAM(memptr, vRamB)
+'    ElseIf memptr < 49152 Then 'read sRam
+'        readM = bRam(memptr - 40960, CurRAMBank)
+'    ElseIf memptr < 53248 Then 'read wRam(0)
+'        readM = RAM(memptr, 0)
+'    ElseIf memptr < 57344 Then 'read wRam(1-7)
+'        readM = RAM(memptr, wRamB)
+'    Else 'read ram
+'        readM = RAM(memptr, 0)      ' Read from RAM
+'    End If
+'End If
+'End Function
+
 Public Function readM(memptr As Long) As Long
-If GBM = 0 Then
-    If memptr < 16384 Then
+    ' =========================================================
+    ' MMIO 및 사운드 APU 레지스터 읽기 ($FF00 - $FFFF / 65280 - 65535)
+    ' =========================================================
+    If memptr >= 65280 Then
+        Select Case memptr
+            ' --- Channel 1 ---
+            Case 65296: readM = (RAM(65296, 0) And &H7F) Or &H80          ' NR10: Bit 7 = 1
+            Case 65297: readM = (RAM(65297, 0) And &HC0) Or &H3F          ' NR11: Bits 0-5 = 1
+            Case 65298: readM = RAM(65298, 0)                             ' NR12: Full
+            Case 65299: readM = &HFF                                      ' NR13: Write Only
+            Case 65300: readM = (RAM(65300, 0) And &H40) Or &HBF          ' NR14: Bit 6 외 모두 1
+            
+            ' --- Channel 2 ---
+            Case 65301: readM = &HFF                                      ' $FF15: 미사용
+            Case 65302: readM = (RAM(65302, 0) And &HC0) Or &H3F          ' NR21: Bits 0-5 = 1
+            Case 65303: readM = RAM(65303, 0)                             ' NR22: Full
+            Case 65304: readM = &HFF                                      ' NR23: Write Only
+            Case 65305: readM = (RAM(65305, 0) And &H40) Or &HBF          ' NR24: Bit 6 외 모두 1
+            
+            ' --- Channel 3 ---
+            Case 65306: readM = (RAM(65306, 0) And &H80) Or &H7F          ' NR30: Bit 7 외 모두 1
+            Case 65307: readM = &HFF                                      ' NR31: Write Only
+            Case 65308: readM = (RAM(65308, 0) And &H60) Or &H9F          ' NR32: Bits 5-6 외 모두 1
+            Case 65309: readM = &HFF                                      ' NR33: Write Only
+            Case 65310: readM = (RAM(65310, 0) And &H40) Or &HBF          ' NR34: Bit 6 외 모두 1
+            
+            ' --- Channel 4 ---
+            Case 65311: readM = &HFF                                      ' $FF1F: 미사용
+            Case 65312: readM = &HFF                                      ' NR41: Write Only
+            Case 65313: readM = RAM(65313, 0)                             ' NR42: Full
+            Case 65314: readM = RAM(65314, 0)                             ' NR43: Full
+            Case 65315: readM = (RAM(65315, 0) And &H40) Or &HBF          ' NR44: Bit 6 외 모두 1
+            
+            ' --- Control ---
+            Case 65316: readM = RAM(65316, 0)                             ' NR50: Full
+            Case 65317: readM = RAM(65317, 0)                             ' NR51: Full
+            Case 65318: readM = Sound.GetNR52()                            ' NR52
+                
+            ' --- 미사용 영역 ($FF27 - $FF2F) ---
+            Case 65319 To 65327: readM = &HFF
+            
+            ' --- Wave RAM ($FF30 - $FF3F / 65328 - 65343) ---
+            ' ★ WaveRAM 배열과 직접 동기화하여 반환
+            Case 65328 To 65343
+                readM = GetWaveRAM(memptr - 65328)
+                
+            ' --- 기타 MMIO ---
+            Case Else
+                readM = RAM(memptr, 0)
+        End Select
+        Exit Function
+    End If
+
+    ' =========================================================
+    ' ROM, RAM, VRAM, SRAM 메모리 맵
+    ' =========================================================
+    If GBM = 0 Then
+        If memptr < 16384 Then
             readM = ROM(memptr, 0)      ' Read from ROM
-    ElseIf memptr < 32768 Then
+        ElseIf memptr < 32768 Then
             readM = ROM(memptr - 16384, CurROMBank)      ' Read from ROM
-    Else
+        Else
             If memptr > 40959 And memptr < 49152 Then
-            readM = bRam(memptr - 40960, CurRAMBank)    ' Read from sRAM
+                readM = bRam(memptr - 40960, CurRAMBank)    ' Read from sRAM
             Else
-            readM = RAM(memptr, 0)      ' Read from RAM
+                readM = RAM(memptr, 0)      ' Read from RAM
             End If
-    End If
-Else
-    If memptr < 16384 Then
+        End If
+    Else
+        If memptr < 16384 Then
             readM = ROM(memptr, 0)      ' Read from ROM
-    ElseIf memptr < 32768 Then
+        ElseIf memptr < 32768 Then
             readM = ROM(memptr - 16384, CurROMBank)      ' Read from ROM
-    ElseIf memptr < 40960 Then 'read Vram
-        readM = RAM(memptr, vRamB)
-    ElseIf memptr < 49152 Then 'read sRam
-        readM = bRam(memptr - 40960, CurRAMBank)
-    ElseIf memptr < 53248 Then 'read wRam(0)
-        readM = RAM(memptr, 0)
-    ElseIf memptr < 57344 Then 'read wRam(1-7)
-        readM = RAM(memptr, wRamB)
-    Else 'read ram
-        readM = RAM(memptr, 0)      ' Read from RAM
+        ElseIf memptr < 40960 Then      ' Read VRAM
+            readM = RAM(memptr, vRamB)
+        ElseIf memptr < 49152 Then      ' Read sRAM
+            readM = bRam(memptr - 40960, CurRAMBank)
+        ElseIf memptr < 53248 Then      ' Read WRAM(0)
+            readM = RAM(memptr, 0)
+        ElseIf memptr < 57344 Then      ' Read WRAM(1-7)
+            readM = RAM(memptr, wRamB)
+        Else                            ' Read RAM
+            readM = RAM(memptr, 0)
+        End If
     End If
-End If
 End Function
+
+
 
 Public Sub WriteM(memptr As Long, ByVal Value As Long)
     Dim i As Long, j As Long
@@ -116,8 +206,19 @@ Public Sub WriteM(memptr As Long, ByVal Value As Long)
 
         ' MMIO Registers ($FF00 - $FFFF)
         If memptr > 65279 Then
+        
+            ' ★ 사운드가 꺼져 있을 때 NR10~NR51 및 WaveRAM 쓰기 방지
+         If Not SoundEnabled Then
+          ' 65296(&HFF10) ~ 65317(&HFF25) 및 65328(&HFF30) ~ 65343(&HFF3F) 영역 무시
+           If (memptr >= 65296 And memptr <= 65317) Or (memptr >= 65328 And memptr <= 65343) Then
+              Exit Sub
+           End If
+          End If
             ' MMIO 공간 기본 쓰기 (사운드 포함 모든 레지스터 상태 보존)
             RAM(memptr, 0) = Value
+            
+         
+           
             
             Select Case memptr
                 Case Is = 65280     ' Joypad

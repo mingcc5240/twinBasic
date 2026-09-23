@@ -65,24 +65,24 @@ Private CurrentBufferIdx As Long
 Private DutyPatterns(0 To 3, 0 To 7) As Byte
 
 ' Channel 1
-Private Ch1_Enable As Boolean
+Public Ch1_Enable As Boolean
 Private Ch1_Freq As Long, Ch1_Vol As Byte, Ch1_DutyIdx As Long, Ch1_Phase As Double, Ch1_RawFreq As Long
 
 ' Channel 2
-Private Ch2_Enable As Boolean
+Public Ch2_Enable As Boolean
 Private Ch2_Freq As Long, Ch2_Vol As Byte, Ch2_DutyIdx As Long, Ch2_Phase As Double, Ch2_RawFreq As Long
 
 ' Channel 3 (Wave)
-Private Ch3_Enable As Boolean
+Public Ch3_Enable As Boolean
 Private Ch3_Freq As Long, Ch3_VolShift As Byte, Ch3_Phase As Single, Ch3_RawFreq As Long
 Private WaveRAM(0 To 15) As Byte
 
 ' Channel 4 (Noise)
-Private Ch4_Enable As Boolean
+Public Ch4_Enable As Boolean
 Private Ch4_Vol As Byte, Ch4_Freq As Single, Ch4_Phase As Single, Ch4_LFSR As Long, Ch4_Step7 As Boolean
 
 ' Panning & Master Control (NR50, NR51, NR52)
-Private SoundEnabled As Boolean
+Public SoundEnabled As Boolean
 Private NR50_VolL As Byte, NR50_VolR As Byte
 Private NR51_Pan As Byte
 
@@ -423,6 +423,50 @@ Public Sub setNR51(Val As Long)
 End Sub
 
 Public Sub setNR52(Val As Long)
+    Dim wasEnabled As Boolean
+    wasEnabled = SoundEnabled
+    
+    ' 오직 7번 비트만 전원 플래그로 동작
     SoundEnabled = ((Val And &H80) <> 0)
+    
+    ' 켜져 있다가 꺼지는 순간: 모든 레지스터를 0으로 리셋
+    If wasEnabled And (Not SoundEnabled) Then
+        Ch1_Enable = False: Ch2_Enable = False: Ch3_Enable = False: Ch4_Enable = False
+        Ch1_Vol = 0: Ch2_Vol = 0: Ch3_VolShift = 0: Ch4_Vol = 0
+        Ch1_Freq = 0: Ch2_Freq = 0: Ch3_Freq = 0: Ch4_Freq = 0
+        Ch1_DutyIdx = 0: Ch2_DutyIdx = 0
+        NR50_VolL = 0: NR50_VolR = 0: NR51_Pan = 0
+        
+        ' ★ [핵심] NR10 ~ NR51 ($FF10 ~ $FF25) RAM 공간을 0으로 초기화
+        Dim addr As Long
+        For addr = 65296 To 65317
+            RAM(addr, 0) = 0
+        Next addr
+        ' Wave RAM(65328 ~ 65343)은 건드리지 않음!
+    End If
 End Sub
 
+
+Public Function GetWaveRAM(ByVal Index As Long) As Byte
+    If Index >= 0 And Index <= 15 Then
+        GetWaveRAM = WaveRAM(Index)
+    Else
+        GetWaveRAM = &HFF
+    End If
+End Function
+
+Public Function GetNR52() As Long
+    Dim apuStatus As Long
+    apuStatus = 0
+    
+    If SoundEnabled Then
+        apuStatus = &H80 ' Bit 7: 전원 켜짐
+        If Ch1_Enable Then apuStatus = apuStatus Or 1
+        If Ch2_Enable Then apuStatus = apuStatus Or 2
+        If Ch3_Enable Then apuStatus = apuStatus Or 4
+        If Ch4_Enable Then apuStatus = apuStatus Or 8
+    End If
+    
+    ' Bit 4, 5, 6은 항상 1 (&H70)
+    GetNR52 = apuStatus Or &H70
+End Function
