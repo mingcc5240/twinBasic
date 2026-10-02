@@ -48,17 +48,17 @@ Global m_TimerVariable As Long
 Global m_APUClockCounter As Long  ' APU 512Hz 주기용 (8192 사이클)
 
 
-Sub setZ(val As Boolean)
-If val Then F = F Or 128 Else F = F And 127
+Sub setZ(Val As Boolean)
+If Val Then F = F Or 128 Else F = F And 127
 End Sub
-Sub setN(val As Boolean)
-If val Then F = F Or 64 Else F = F And 191
+Sub setN(Val As Boolean)
+If Val Then F = F Or 64 Else F = F And 191
 End Sub
-Sub setH(val As Boolean)
-If val Then F = F Or 32 Else F = F And 223
+Sub setH(Val As Boolean)
+If Val Then F = F Or 32 Else F = F And 223
 End Sub
-Sub setC(val As Boolean)
-If val Then F = F Or 16 Else F = F And 239
+Sub setC(Val As Boolean)
+If Val Then F = F Or 16 Else F = F And 239
 End Sub
 
 Function getZ() As Boolean
@@ -171,6 +171,161 @@ Sub IntReq()
 End Sub
 
 Public Sub RunCpu2()
+    If lfp Then
+        QueryPerformanceCounter curStart
+    End If
+    brkAddr = -1
+
+    ' 스캔라인 타이밍 상수 및 기준점
+    Dim lineClocks As Long
+    lineClocks = 456 + 456 * cpuS
+
+    cldr = 255
+    cllc = lineClocks - 1
+    Clm0 = cllc - (204 + 204 * cpuS)
+    clm3 = cllc - (376 + 376 * cpuS)
+    bCpuRun = True
+
+    ' 고정 하드웨어 레지스터 주소 상수화
+    Const ADDR_IF   As Long = 65295 ' 0xFF0F
+    Const ADDR_LCDC As Long = 65344 ' 0xFF40
+    Const ADDR_STAT As Long = 65345 ' 0xFF41
+    Const ADDR_LY   As Long = 65348 ' 0xFF44
+    Const ADDR_LYC  As Long = 65349 ' 0xFF45
+    Const ADDR_HDMA As Long = 65365 ' 0xFF55
+
+    Dim curLY As Long, curSTAT As Long, curLCDC As Long
+
+    While bCpuRun
+        ' 1. CPU 사이클 실행
+        RunCycles2
+
+        ' 2. 인터럽트 처리
+        IntReq
+
+        curLCDC = RAM(ADDR_LCDC, 0)
+
+        ' --- LCD가 켜져 있을 때 (LCDC Bit 7) ---
+        If (curLCDC And 128) <> 0 Then
+            curLY = RAM(ADDR_LY, 0)
+
+            ' [Mode 3: Pixel Transfer]
+            If (Clcount > clm3) And (curLY < 144) Then
+                clm3 = clm3 + lineClocks
+
+                If Not Skipf Then
+                    If GBM Then Drawline Else Drawline4
+                End If
+
+                ' STAT Mode 3 (비트 0,1 = 3)
+                RAM(ADDR_STAT, 0) = (RAM(ADDR_STAT, 0) And 252) Or 3
+
+            ' [Mode 0: H-Blank]
+            ElseIf (Clcount > Clm0) And (curLY < 144) Then
+                Clm0 = Clm0 + lineClocks
+
+                hline = curLY
+                curSTAT = RAM(ADDR_STAT, 0) And 252
+                RAM(ADDR_STAT, 0) = curSTAT
+
+                ' HDMA H-Blank 전송 처리
+                If Hdma Then
+                    For i = hdmaS To hdmaS + 15
+                        RAM(hdmaD, vRamB) = readM(i)
+                        hdmaD = hdmaD + 1
+                    Next i
+                    hdmaS = hdmaS + 16
+                    Hdmal = Hdmal - 1
+                    If Hdmal = -1 Then
+                        Hdma = False
+                        RAM(ADDR_HDMA, 0) = 255
+                    Else
+                        RAM(ADDR_HDMA, 0) = Hdmal
+                    End If
+                End If
+
+                ' STAT H-Blank 인터럽트 (Bit 3)
+                If (curSTAT And 8) <> 0 Then
+                    RAM(ADDR_IF, 0) = RAM(ADDR_IF, 0) Or 2
+                End If
+
+            ' [스캔라인 완료 (456 사이클 경과)]
+            ElseIf Clcount > cllc Then
+                cllc = cllc + lineClocks
+
+                ' LY 증가 (Mod 나눗셈 대신 비교문 사용)
+                curLY = curLY + 1
+                If curLY >= 154 Then curLY = 0
+                RAM(ADDR_LY, 0) = curLY
+
+                ' V-Blank 진입 지점 (LY = 144)
+                If curLY = 144 Then
+                    DrawScreen
+                    Call Sound.updatesnd(0)
+                    QueryPerformanceCounter curStart
+                End If
+
+                ' LY == LYC 일치 검사
+                curSTAT = RAM(ADDR_STAT, 0)
+                If curLY = RAM(ADDR_LYC, 0) Then
+                    If (curSTAT And 64) <> 0 Then RAM(ADDR_IF, 0) = RAM(ADDR_IF, 0) Or 2
+                    RAM(ADDR_STAT, 0) = curSTAT Or 4
+                Else
+                    RAM(ADDR_STAT, 0) = curSTAT And 251
+                End If
+
+                ' 모드 갱신 및 인터럽트 트리거
+                If curLY < 144 Then
+                    ' Mode 2 (OAM Search)
+                    RAM(ADDR_STAT, 0) = (RAM(ADDR_STAT, 0) And 252) Or 2
+                    If (RAM(ADDR_STAT, 0) And 32) <> 0 Then RAM(ADDR_IF, 0) = RAM(ADDR_IF, 0) Or 2
+                ElseIf curLY = 144 Then
+                    ' Mode 1 (V-Blank)
+                    RAM(ADDR_STAT, 0) = (RAM(ADDR_STAT, 0) And 252) Or 1
+                    RAM(ADDR_IF, 0) = RAM(ADDR_IF, 0) Or 1 ' V-Blank IRQ
+                    If (RAM(ADDR_STAT, 0) And 16) <> 0 Then RAM(ADDR_IF, 0) = RAM(ADDR_IF, 0) Or 2
+                End If
+            End If
+
+        ' --- LCD가 꺼져 있을 때 ---
+        Else
+            If Clcount > cllc Then
+                cllc = cllc + lineClocks
+                If Hdma Then
+                    For i = hdmaS To hdmaS + 15
+                        RAM(hdmaD, vRamB) = readM(i)
+                        hdmaD = hdmaD + 1
+                    Next i
+                    hdmaS = hdmaS + 16
+                    Hdmal = Hdmal - 1
+                    If Hdmal = -1 Then
+                        Hdma = False
+                        RAM(ADDR_HDMA, 0) = 255
+                    Else
+                        RAM(ADDR_HDMA, 0) = Hdmal
+                    End If
+                End If
+            End If
+        End If
+
+        ' --- 프레임 완료 처리 (70224 사이클) ---
+        If Clcount > 70223 Then
+            Mhz = Mhz + 1
+            Clcount = Clcount - 70224
+            cllc = cllc - 70224
+            Clm0 = cllc - (204 + 204 * cpuS)
+            clm3 = cllc - (376 + 376 * cpuS)
+
+            ' Windows 메시지 펌프
+            Do While PeekMessage(message, 0&, 0&, 0&, PM_REMOVE)
+                Call TranslateMessage(message)
+                Call DispatchMessage(message)
+            Loop
+        End If
+    Wend
+End Sub
+
+Public Sub RunCpu2_0()
 If lfp Then
 QueryPerformanceCounter curStart 'Get the start time
 End If

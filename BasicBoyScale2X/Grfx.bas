@@ -25,7 +25,7 @@ Dim colid2(2, 128, 128) As Long
 Public FULLSCREEN As Boolean
 Dim TCol As Long, mode1 As Boolean
 Dim i As Long, i2 As Long, x As Long, y As Long, tilemap As Long, tileloc As Long, tileptr As Long
-Dim xoffset As Long, yoffset As Long, TileData As Long, tileend As Long
+Dim xoffset As Long, yoffset As Long, tileData As Long, tileend As Long
 Dim LByte As Long, HByte As Long, SpriteY As Long
 Dim dy As Long, dx As Long, spat As Long
 Dim tmp1 As Long, tmp2 As Long, memptr As Long, tmp3 As Long, rx As Long, ry As Long, lolm As Long, tms As Long
@@ -332,16 +332,232 @@ On Error Resume Next
 If FileLen(file) = 0 Then fileexist = False Else fileexist = True
 End Function
 
-Sub Drawline4() 'Using Api and SetBits/StrechBits
+Sub Drawline4()
+    curline = RAM(65348, 0) ' 0xFF44 (LY)
+    If curline = lastline Then Exit Sub
+    lastline = curline
+
+    Dim lcdc As Long
+    lcdc = RAM(65344, 0)    ' 0xFF40 (LCDC)
+
+    ' LCD가 꺼져 있으면 그리지 않고 종료
+    If (lcdc And 128) = 0 Then Exit Sub
+
+    Dim tileData As Long, tilemap As Long
+    Dim xoffset As Long, yoffset As Long
+    Dim xs As Long, ys As Long
+    Dim tileptr As Long, memptr As Long
+    Dim mv1 As Long, mv2 As Long
+    Dim x As Long, px As Long
+    Dim cIdx As Long
+
+    ' 1. 타일 데이터 기준 주소 (LCDC Bit 4)
+    If (lcdc And 16) <> 0 Then
+        tileData = 32768    ' &H8000
+    Else
+        tileData = 34816    ' &H8800 (Signed 타일셋)
+    End If
+
+    ' ========================================================
+    ' [1] Background 그리기
+    ' ========================================================
+    If bgv Then
+        ' BG 타일 맵 주소 (LCDC Bit 3)
+        If (lcdc And 8) <> 0 Then
+            tilemap = 39936 ' &H9C00
+        Else
+            tilemap = 38912 ' &H9800
+        End If
+
+        xoffset = RAM(65347, 0)           ' SCX
+        yoffset = (RAM(65346, 0) + curline) And 255 ' SCY + LY (256 랩어라운드)
+        
+        ys = yoffset \ 8
+        xs = xoffset \ 8
+        yoffset = (yoffset And 7) * 2
+        xoffset = -(xoffset And 7)
+
+        Dim mapRowAddr As Long
+        mapRowAddr = tilemap + ys * 32
+
+        For x = xoffset To 159 Step 8
+            ' 타일 번호 조회
+            Dim tNum As Long
+            tNum = RAM(mapRowAddr + xs, 0)
+
+            If tileData = 32768 Then
+                tileptr = tNum * 16
+            Else
+                tileptr = (tNum Xor 128) * 16
+            End If
+
+            xs = (xs + 1) And 31 ' Mod 32 대신 And 31 (속도 최적화)
+
+            memptr = tileData + tileptr + yoffset
+            mv2 = RAM(memptr, 0)     ' Low Plane
+            mv1 = RAM(memptr + 1, 0) ' High Plane
+
+            ' 8개 픽셀 렌더링 (비트 7부터 0 순서로 화면에 좌->우 배치)
+            If x >= 0 And x <= 152 Then
+                Vram(x + 7, curline) = colid2(0, mv1 And 1, mv2 And 1)
+                Vram(x + 6, curline) = colid2(0, (mv1 \ 2) And 1, (mv2 \ 2) And 1)
+                Vram(x + 5, curline) = colid2(0, (mv1 \ 4) And 1, (mv2 \ 4) And 1)
+                Vram(x + 4, curline) = colid2(0, (mv1 \ 8) And 1, (mv2 \ 8) And 1)
+                Vram(x + 3, curline) = colid2(0, (mv1 \ 16) And 1, (mv2 \ 16) And 1)
+                Vram(x + 2, curline) = colid2(0, (mv1 \ 32) And 1, (mv2 \ 32) And 1)
+                Vram(x + 1, curline) = colid2(0, (mv1 \ 64) And 1, (mv2 \ 64) And 1)
+                Vram(x, curline) = colid2(0, (mv1 \ 128) And 1, (mv2 \ 128) And 1)
+            Else
+                ' 좌우 경계 클리핑 처리
+                Dim bitPos As Long, mask As Long: mask = 1
+                For bitPos = 7 To 0 Step -1
+                    px = x + bitPos
+                    If px >= 0 And px < 160 Then
+                        Vram(px, curline) = colid2(0, mv1 And 1, mv2 And 1)
+                    End If
+                    mv1 = mv1 \ 2: mv2 = mv2 \ 2
+                Next bitPos
+            End If
+        Next x
+    End If
+
+    ' ========================================================
+    ' [2] Window 그리기
+    ' ========================================================
+    Dim winY As Long, winX As Long
+    winY = RAM(65354, 0) ' 0xFF4A (WY)
+    winX = RAM(65355, 0) ' 0xFF4B (WX)
+
+    If ((lcdc And 32) <> 0) And wv And (curline >= winY) And (winX < 167) Then
+        If (lcdc And 64) <> 0 Then
+            tilemap = 39936 ' &H9C00
+        Else
+            tilemap = 38912 ' &H9800
+        End If
+
+        yoffset = curline - winY
+        tilemap = tilemap + (yoffset \ 8) * 32
+        yoffset = (yoffset And 7) * 2
+
+        For x = winX - 7 To 159 Step 8
+            Dim wTile As Long
+            wTile = RAM(tilemap, 0)
+
+            If tileData = 32768 Then
+                tileptr = wTile * 16
+            Else
+                tileptr = (wTile Xor 128) * 16
+            End If
+            tilemap = tilemap + 1
+
+            memptr = tileData + tileptr + yoffset
+            mv2 = RAM(memptr, 0)
+            mv1 = RAM(memptr + 1, 0)
+
+            If x >= 0 And x <= 152 Then
+                Vram(x + 7, curline) = colid2(0, mv1 And 1, mv2 And 1)
+                Vram(x + 6, curline) = colid2(0, (mv1 \ 2) And 1, (mv2 \ 2) And 1)
+                Vram(x + 5, curline) = colid2(0, (mv1 \ 4) And 1, (mv2 \ 4) And 1)
+                Vram(x + 4, curline) = colid2(0, (mv1 \ 8) And 1, (mv2 \ 8) And 1)
+                Vram(x + 3, curline) = colid2(0, (mv1 \ 16) And 1, (mv2 \ 16) And 1)
+                Vram(x + 2, curline) = colid2(0, (mv1 \ 32) And 1, (mv2 \ 32) And 1)
+                Vram(x + 1, curline) = colid2(0, (mv1 \ 64) And 1, (mv2 \ 64) And 1)
+                Vram(x, curline) = colid2(0, (mv1 \ 128) And 1, (mv2 \ 128) And 1)
+            Else
+                For bitPos = 7 To 0 Step -1
+                    px = x + bitPos
+                    If px >= 0 And px < 160 Then
+                        Vram(px, curline) = colid2(0, mv1 And 1, mv2 And 1)
+                    End If
+                    mv1 = mv1 \ 2: mv2 = mv2 \ 2
+                Next bitPos
+            End If
+        Next x
+    End If
+
+    ' ========================================================
+    ' [3] Sprites (OBJ) 그리기
+    ' ========================================================
+    If ((lcdc And 2) <> 0) And objv Then
+        Dim spriteSizeY As Long
+        If (lcdc And 4) = 0 Then spriteSizeY = 8 Else spriteSizeY = 16
+
+        Dim sprCount As Long: sprCount = 0
+        Dim sprY As Long, sprX As Long, sprAttr As Long
+        Dim sprTile As Long, spat As Long, bgPriority As Boolean
+        Dim cid0 As Long: cid0 = colid2(0, 0, 0) ' BG 투명 기준 색상
+
+        ' 하드웨어 규칙: 1라인당 최대 10개 스프라이트 제한
+        For tilemap = 65180 To 65024 Step -4
+            sprY = RAM(tilemap, 0) - 16
+            
+            ' Y축 스캔라인 포함 검사
+            If curline >= sprY And curline < (sprY + spriteSizeY) Then
+                sprX = RAM(tilemap + 1, 0) - 8
+                
+                ' X축 화면 내 존재 검사
+                If sprX > -8 And sprX < 160 Then
+                    sprCount = sprCount + 1
+                    
+                    sprAttr = RAM(tilemap + 3, 0)
+                    bgPriority = ((sprAttr And 128) <> 0)
+                    spat = ((sprAttr And 16) \ 16) + 1 ' OBP0 또는 OBP1 팔레트
+                    
+                    If spriteSizeY = 8 Then
+                        tileptr = RAM(tilemap + 2, 0) * 16
+                    Else
+                        tileptr = (RAM(tilemap + 2, 0) And 254) * 16
+                    End If
+
+                    ' Y 플립(비트 6) 반영 라인 오프셋
+                    Dim lineInSpr As Long
+                    lineInSpr = curline - sprY
+                    If (sprAttr And 64) <> 0 Then
+                        lineInSpr = (spriteSizeY - 1) - lineInSpr
+                    End If
+
+                    memptr = 32768 + tileptr + lineInSpr * 2
+                    
+                    ' X 플립(비트 5) 검사 및 미러링
+                    If (sprAttr And 32) <> 0 Then
+                        mv1 = mir(RAM(memptr + 1, vrm))
+                        mv2 = mir(RAM(memptr, vrm))
+                    Else
+                        mv1 = RAM(memptr + 1, vrm)
+                        mv2 = RAM(memptr, vrm)
+                    End If
+
+                    ' 8픽셀 렌더링
+                    For bitPos = 7 To 0 Step -1
+                        px = sprX + bitPos
+                        If px >= 0 And px < 160 Then
+                            cIdx = (mv1 And 1) Or ((mv2 And 1) * 2)
+                            If cIdx <> 0 Then ' 0번 색상은 투명 처리
+                                If Not bgPriority Or (Vram(px, curline) = cid0) Then
+                                    Vram(px, curline) = colid2(spat, mv1 And 1, mv2 And 1)
+                                End If
+                            End If
+                        End If
+                        mv1 = mv1 \ 2: mv2 = mv2 \ 2
+                    Next bitPos
+
+                    If sprCount >= 10 Then Exit For ' 1스캔라인 10개 한도 도달 시 루프 즉시 종료
+                End If
+            End If
+        Next tilemap
+    End If
+End Sub
+
+Sub Drawline4_0() 'Using Api and SetBits/StrechBits
 curline = RAM(65348, 0)
 If curline = lastline Then Exit Sub
 lastline = curline
     ' Draw Background
     ' Get BG & window Tile Pattern Data Address
     If RAM(65344, 0) And 16 Then
-        TileData = 32768
+        tileData = 32768
     Else
-        TileData = 34816
+        tileData = 34816
     End If
     If bgv Then
     ' Get BG Tile Table Address
@@ -362,7 +578,7 @@ lastline = curline
     For x = xoffset To 159 Step 8
         tiletmp = tilemap + ys * 32 + xs
         If tiletmp > tileend Then tiletmp = tiletmp - 1024
-        If TileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
+        If tileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
             tileptr = RAM(tiletmp, 0) * 16             'Get pointer to tile
         Else
             tileptr = (RAM(tiletmp, 0) Xor 128) * 16
@@ -370,7 +586,7 @@ lastline = curline
         
         xs = (xs + 1) Mod 32
         
-        memptr = TileData + tileptr + (yoffset And 7) * 2
+        memptr = tileData + tileptr + (yoffset And 7) * 2
         mv1 = RAM(memptr + 1, 0): mv2 = RAM(memptr, 0)
         If x > -1 And x < 153 Then
             Vram(x + 7, curline) = colid2(0, mv1 And 1, mv2 And 1): mv1 = mv1 \ 2: mv2 = mv2 \ 2
@@ -415,12 +631,12 @@ If (RAM(65344, 0) And 32) = 32 And wv And curline >= RAM(65354, 0) And RAM(65355
     tilemap = tilemap + (yoffset \ 8) * 32
     yoffset = yoffset And 7
     For x = RAM(65355, 0) - 7 To 159 Step 8
-        If TileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
+        If tileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
             tileptr = RAM(tilemap, 0) * 16             'Get pointer to tile
         Else
             tileptr = (RAM(tilemap, 0) Xor 128) * 16
         End If
-        memptr = TileData + tileptr + (yoffset And 7) * 2
+        memptr = tileData + tileptr + (yoffset And 7) * 2
         mv1 = RAM(memptr + 1, 0): mv2 = RAM(memptr, 0)
         
         If x > -1 And x < 153 Then
@@ -521,8 +737,298 @@ If (RAM(65344, 0) And 2) And objv Then
    
     
 End Sub
+Sub Drawline()
+    curline = RAM(65348, 0) ' 0xFF44 (LY)
+    If curline = lastline Then Exit Sub
+    lastline = curline
 
-Sub Drawline() 'Using Api and SetBits/StrechBits
+    Dim lcdc As Long
+    lcdc = RAM(65344, 0)    ' 0xFF40 (LCDC)
+
+    ' LCD가 꺼져 있으면 그리지 않고 종료
+    If (lcdc And 128) = 0 Then Exit Sub
+
+    Dim tileData As Long, tilemap As Long
+    Dim xoffset As Long, yoffset As Long
+    Dim xs As Long, ys As Long
+    Dim tileptr As Long, memptr As Long
+    Dim mv1 As Long, mv2 As Long
+    Dim x As Long, px As Long, scrX As Long
+    Dim bgat As Long, ccp As Long, vrm As Long
+    Dim xflip As Boolean, yflip As Boolean
+    Dim tNum As Long
+
+    ' 타일 패턴 데이터 베이스 주소 (LCDC Bit 4)
+    If (lcdc And 16) <> 0 Then
+        tileData = 32768    ' &H8000 (0~255 Unsigned)
+    Else
+        tileData = 34816    ' &H8800 (Signed 타일셋)
+    End If
+
+    ' ========================================================
+    ' [1] GBC Background 그리기
+    ' ========================================================
+    If bgv Then
+        ' BG 타일 맵 주소 (LCDC Bit 3)
+        If (lcdc And 8) <> 0 Then
+            tilemap = 39936 ' &H9C00
+        Else
+            tilemap = 38912 ' &H9800
+        End If
+
+        xoffset = RAM(65347, 0)
+        yoffset = (RAM(65346, 0) + curline) And 255
+        ys = yoffset \ 8
+        xs = xoffset \ 8
+        yoffset = yoffset And 7
+        xoffset = -(xoffset And 7)
+
+        Dim mapRowAddr As Long
+        mapRowAddr = tilemap + ys * 32
+
+        For x = xoffset To 159 Step 8
+            Dim tileEntry As Long
+            tileEntry = mapRowAddr + xs
+
+            tNum = RAM(tileEntry, 0)
+            If tileData = 32768 Then
+                tileptr = tNum * 16
+            Else
+                tileptr = (tNum Xor 128) * 16
+            End If
+
+            bgat = RAM(tileEntry, 1)
+            ccp = bgat And 7
+            vrm = (bgat And 8) \ 8
+            xflip = ((bgat And 32) <> 0)
+            yflip = ((bgat And 64) <> 0)
+
+            ' BG 우선순위/투명도 검사용 배경 0번 컬러 기록
+            If (x >= 0) And (x <= 159) Then
+                tcls(x \ 8) = gbcP(bgp(ccp, 0))
+            End If
+
+            ' 4개 색상 LUT 캐시
+            ccid(0, 0) = gbcP(bgp(ccp, 0))
+            ccid(0, 1) = gbcP(bgp(ccp, 1))
+            ccid(1, 0) = gbcP(bgp(ccp, 2))
+            ccid(1, 1) = gbcP(bgp(ccp, 3))
+
+            ' Y-Flip에 따른 타일 내부 라인 주소
+            If yflip Then
+                memptr = tileData + tileptr + (14 - yoffset * 2)
+            Else
+                memptr = tileData + tileptr + (yoffset * 2)
+            End If
+
+            ' X-Flip에 따른 픽셀 데이터 로드
+            If xflip Then
+                mv1 = mir(RAM(memptr + 1, vrm))
+                mv2 = mir(RAM(memptr, vrm))
+            Else
+                mv1 = RAM(memptr + 1, vrm)
+                mv2 = RAM(memptr, vrm)
+            End If
+
+            xs = (xs + 1) And 31 ' Mod 32 대신 And 31
+
+            ' 화면 내부 (클리핑 불필요)
+            If x >= 0 And x <= 152 Then
+                Vram(x + 7, curline) = ccid(mv1 And 1, mv2 And 1)
+                Vram(x + 6, curline) = ccid((mv1 \ 2) And 1, (mv2 \ 2) And 1)
+                Vram(x + 5, curline) = ccid((mv1 \ 4) And 1, (mv2 \ 4) And 1)
+                Vram(x + 4, curline) = ccid((mv1 \ 8) And 1, (mv2 \ 8) And 1)
+                Vram(x + 3, curline) = ccid((mv1 \ 16) And 1, (mv2 \ 16) And 1)
+                Vram(x + 2, curline) = ccid((mv1 \ 32) And 1, (mv2 \ 32) And 1)
+                Vram(x + 1, curline) = ccid((mv1 \ 64) And 1, (mv2 \ 64) And 1)
+                Vram(x, curline) = ccid((mv1 \ 128) And 1, (mv2 \ 128) And 1)
+            Else
+                ' 화면 좌/우 경계 클리핑
+                For px = 7 To 0 Step -1
+                    scrX = x + px
+                    If scrX >= 0 And scrX < 160 Then
+                        Vram(scrX, curline) = ccid(mv1 And 1, mv2 And 1)
+                    End If
+                    mv1 = mv1 \ 2
+                    mv2 = mv2 \ 2
+                Next px
+            End If
+        Next x
+    End If
+
+    ' ========================================================
+    ' [2] GBC Window 그리기
+    ' ========================================================
+    Dim winY As Long, winX As Long
+    winY = RAM(65354, 0)
+    winX = RAM(65355, 0) - 7
+
+    If ((lcdc And 32) <> 0) And wv And (curline >= winY) And (winX < 160) Then
+        Dim winTileMapBase As Long
+        If (lcdc And 64) <> 0 Then
+            winTileMapBase = 39936 ' &H9C00
+        Else
+            winTileMapBase = 38912 ' &H9800
+        End If
+
+        yoffset = curline - winY
+        Dim wy As Long: wy = yoffset \ 8
+        yoffset = yoffset And 7
+
+        Dim wx As Long: wx = 0
+        Dim winRowAddr As Long: winRowAddr = winTileMapBase + (wy * 32)
+
+        For x = winX To 159 Step 8
+            Dim winTileEntry As Long
+            winTileEntry = winRowAddr + (wx And 31)
+            wx = wx + 1
+
+            tNum = RAM(winTileEntry, 0)
+            If tileData = 32768 Then
+                tileptr = tNum * 16
+                memptr = 32768 + tileptr
+            Else
+                If tNum > 127 Then tNum = tNum - 256
+                memptr = 36864 + (tNum * 16)
+            End If
+
+            bgat = RAM(winTileEntry, 1)
+            ccp = bgat And 7
+            vrm = (bgat And 8) \ 8
+            xflip = ((bgat And 32) <> 0)
+            yflip = ((bgat And 64) <> 0)
+
+            ccid(0, 0) = gbcP(bgp(ccp, 0))
+            ccid(0, 1) = gbcP(bgp(ccp, 1))
+            ccid(1, 0) = gbcP(bgp(ccp, 2))
+            ccid(1, 1) = gbcP(bgp(ccp, 3))
+
+            If yflip Then
+                memptr = memptr + (14 - yoffset * 2)
+            Else
+                memptr = memptr + (yoffset * 2)
+            End If
+
+            If xflip Then
+                mv1 = mir(RAM(memptr + 1, vrm))
+                mv2 = mir(RAM(memptr, vrm))
+            Else
+                mv1 = RAM(memptr + 1, vrm)
+                mv2 = RAM(memptr, vrm)
+            End If
+
+            If x >= 0 And x <= 152 Then
+                Vram(x + 7, curline) = ccid(mv1 And 1, mv2 And 1)
+                Vram(x + 6, curline) = ccid((mv1 \ 2) And 1, (mv2 \ 2) And 1)
+                Vram(x + 5, curline) = ccid((mv1 \ 4) And 1, (mv2 \ 4) And 1)
+                Vram(x + 4, curline) = ccid((mv1 \ 8) And 1, (mv2 \ 8) And 1)
+                Vram(x + 3, curline) = ccid((mv1 \ 16) And 1, (mv2 \ 16) And 1)
+                Vram(x + 2, curline) = ccid((mv1 \ 32) And 1, (mv2 \ 32) And 1)
+                Vram(x + 1, curline) = ccid((mv1 \ 64) And 1, (mv2 \ 64) And 1)
+                Vram(x, curline) = ccid((mv1 \ 128) And 1, (mv2 \ 128) And 1)
+            Else
+                For px = 7 To 0 Step -1
+                    scrX = x + px
+                    If scrX >= 0 And scrX < 160 Then
+                        Vram(scrX, curline) = ccid(mv1 And 1, mv2 And 1)
+                    End If
+                    mv1 = mv1 \ 2
+                    mv2 = mv2 \ 2
+                Next px
+            End If
+        Next x
+    End If
+
+    ' ========================================================
+    ' [3] GBC Sprites (OBJ) 그리기
+    ' ========================================================
+    If ((lcdc And 2) <> 0) And objv Then
+        Dim spriteSizeY As Long
+        If (lcdc And 4) = 0 Then spriteSizeY = 8 Else spriteSizeY = 16
+
+        Dim sprCount As Long: sprCount = 0
+        Dim sprY As Long, sprX As Long, sprAttr As Long
+        Dim sprTile As Long, bgPriority As Boolean
+        Dim colBit1 As Long, colBit2 As Long
+
+        ' OAM 스캔 (40개 스프라이트)
+        For tilemap = 65180 To 65024 Step -4
+            sprY = RAM(tilemap, 0) - 16
+
+            If curline >= sprY And curline < (sprY + spriteSizeY) Then
+                sprX = RAM(tilemap + 1, 0) - 8
+
+                If sprX > -8 And sprX < 160 Then
+                    sprCount = sprCount + 1
+
+                    sprAttr = RAM(tilemap + 3, 0)
+                    bgPriority = ((sprAttr And 128) <> 0)
+                    vrm = (sprAttr And 8) \ 8
+                    ccp = sprAttr And 7
+
+                    If spriteSizeY = 8 Then
+                        tileptr = RAM(tilemap + 2, 0) * 16
+                    Else
+                        tileptr = (RAM(tilemap + 2, 0) And 254) * 16
+                    End If
+
+                    ' 팔레트 설정
+                    ccid(0, 0) = gbcP(objp(ccp, 0))
+                    ccid(0, 1) = gbcP(objp(ccp, 1))
+                    ccid(1, 0) = gbcP(objp(ccp, 2))
+                    ccid(1, 1) = gbcP(objp(ccp, 3))
+
+                    memptr = 32768 + tileptr
+
+                    ' Y 플립 (Bit 6)
+                    Dim lineInSpr As Long
+                    lineInSpr = curline - sprY
+                    If (sprAttr And 64) <> 0 Then
+                        lineInSpr = (spriteSizeY - 1) - lineInSpr
+                    End If
+                    memptr = memptr + (lineInSpr * 2)
+
+                    ' X 플립 (Bit 5)
+                    If (sprAttr And 32) <> 0 Then
+                        mv1 = mir(RAM(memptr + 1, vrm))
+                        mv2 = mir(RAM(memptr, vrm))
+                    Else
+                        mv1 = RAM(memptr + 1, vrm)
+                        mv2 = RAM(memptr, vrm)
+                    End If
+
+                    ' 스프라이트 픽셀 렌더링 루프
+                    For px = 7 To 0 Step -1
+                        scrX = sprX + px
+                        If scrX >= 0 And scrX < 160 Then
+                            colBit1 = mv1 And 1
+                            colBit2 = mv2 And 1
+
+                            ' colidx(colBit1, colBit2) 검사 (0번 색상은 투명)
+                            If (colBit1 Or colBit2) <> 0 Then
+                                If Not bgPriority Then
+                                    Vram(scrX, curline) = ccid(colBit1, colBit2)
+                                Else
+                                    ' BG 우선 모드일 때는 배경이 투명색(tcls)일 때만 그리기
+                                    If Vram(scrX, curline) = tcls(scrX \ 8) Then
+                                        Vram(scrX, curline) = ccid(colBit1, colBit2)
+                                    End If
+                                End If
+                            End If
+                        End If
+                        mv1 = mv1 \ 2
+                        mv2 = mv2 \ 2
+                    Next px
+
+                    ' 1라인당 10개 한도 시 루프 탈출
+                    If sprCount >= 10 Then Exit For
+                End If
+            End If
+        Next tilemap
+    End If
+End Sub
+
+Sub Drawline_() 'Using Api and SetBits/StrechBits
    
 curline = RAM(65348, 0)
 If curline = lastline Then Exit Sub
@@ -530,9 +1036,9 @@ lastline = curline
     ' Draw Background
     ' Get BG & window Tile Pattern Data Address
     If RAM(65344, 0) And 16 Then
-        TileData = 32768
+        tileData = 32768
     Else
-        TileData = 34816
+        tileData = 34816
     End If
 
 If bgv Then
@@ -556,7 +1062,7 @@ If bgv Then
     For x = xoffset To 159 Step 8
         tiletmp = tilemap + ys * 32 + xs
         If tiletmp > tileend Then tiletmp = tiletmp - 1024
-        If TileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
+        If tileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
             tileptr = RAM(tiletmp, 0) * 16             'Get pointer to tile
         Else
             tileptr = (RAM(tiletmp, 0) Xor 128) * 16
@@ -570,7 +1076,7 @@ If bgv Then
         ccid(0, 1) = gbcP(bgp(ccp, 1))
         ccid(1, 0) = gbcP(bgp(ccp, 2))
         ccid(1, 1) = gbcP(bgp(ccp, 3))
-        If yflip Then memptr = TileData + tileptr + 14 - (yoffset And 7) * 2 Else memptr = TileData + tileptr + (yoffset And 7) * 2
+        If yflip Then memptr = tileData + tileptr + 14 - (yoffset And 7) * 2 Else memptr = tileData + tileptr + (yoffset And 7) * 2
         If xflip Then mv1 = mir(RAM(memptr + 1, vrm)): mv2 = mir(RAM(memptr, vrm)) Else mv1 = RAM(memptr + 1, vrm): mv2 = RAM(memptr, vrm)
         xs = (xs + 1) Mod 32
         
@@ -638,7 +1144,7 @@ If bgv Then
             wx = wx + 1
             
             ' 타일 번호 가져오기 및 패턴 데이터 주소 계산
-            If TileData = 32768 Then
+            If tileData = 32768 Then
                 ' 0x8000 방식 (Unsigned)
                 tileptr = RAM(winTileAddr, 0) * 16
                 memptr = 32768 + tileptr
@@ -804,9 +1310,9 @@ lastline = curline
     ' Draw Background
     ' Get BG & window Tile Pattern Data Address
     If RAM(65344, 0) And 16 Then
-        TileData = 32768
+        tileData = 32768
     Else
-        TileData = 34816
+        tileData = 34816
     End If
 If bgv Then
     ' Get BG Tile Table Address
@@ -828,7 +1334,7 @@ If bgv Then
     For x = xoffset To 159 Step 8
         tiletmp = tilemap + ys * 32 + xs
         If tiletmp > tileend Then tiletmp = tiletmp - 1024
-        If TileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
+        If tileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
             tileptr = RAM(tiletmp, 0) * 16             'Get pointer to tile
         Else
             tileptr = (RAM(tiletmp, 0) Xor 128) * 16
@@ -842,7 +1348,7 @@ If bgv Then
         ccid(0, 1) = gbcP(bgp(ccp, 1))
         ccid(1, 0) = gbcP(bgp(ccp, 2))
         ccid(1, 1) = gbcP(bgp(ccp, 3))
-        If yflip Then memptr = TileData + tileptr + 14 - (yoffset And 7) * 2 Else memptr = TileData + tileptr + (yoffset And 7) * 2
+        If yflip Then memptr = tileData + tileptr + 14 - (yoffset And 7) * 2 Else memptr = tileData + tileptr + (yoffset And 7) * 2
         If xflip Then mv1 = mir(RAM(memptr + 1, vrm)): mv2 = mir(RAM(memptr, vrm)) Else mv1 = RAM(memptr + 1, vrm): mv2 = RAM(memptr, vrm)
         xs = (xs + 1) Mod 32
         
@@ -897,7 +1403,7 @@ If (RAM(65344, 0) And 32) = 32 And wv And curline >= RAM(65354, 0) And RAM(65355
     tilemap = tilemap + (yoffset \ 8) * 32
     yoffset = yoffset And 7
     For x = RAM(65355, 0) - 7 To 159 Step 8
-        If TileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
+        If tileData = 32768 Then           ' Tile Data @ &H8800-&h97FF is 128ed
             tileptr = RAM(tilemap, 0) * 16             'Get pointer to tile
         Else
             tileptr = (RAM(tilemap, 0) Xor 128) * 16
@@ -910,7 +1416,7 @@ If (RAM(65344, 0) And 32) = 32 And wv And curline >= RAM(65354, 0) And RAM(65355
         ccid(0, 1) = gbcP(bgp(ccp, 1))
         ccid(1, 0) = gbcP(bgp(ccp, 2))
         ccid(1, 1) = gbcP(bgp(ccp, 3))
-        If yflip Then memptr = TileData + tileptr + 14 - yoffset * 2 Else memptr = TileData + tileptr + yoffset * 2
+        If yflip Then memptr = tileData + tileptr + 14 - yoffset * 2 Else memptr = tileData + tileptr + yoffset * 2
         If xflip Then mv1 = mir(RAM(memptr + 1, vrm)): mv2 = mir(RAM(memptr, vrm)) Else mv1 = RAM(memptr + 1, vrm): mv2 = RAM(memptr, vrm)
         
         If x > -1 And x < 153 Then
