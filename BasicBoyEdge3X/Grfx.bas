@@ -188,6 +188,126 @@ Public Sub ApplyEdge3x()
     Call ProcessEdge3xBorders
 End Sub
 
+Public Sub ApplyEdge3x_Masked()
+    Dim x As Long, y As Long
+    Dim dx As Long, dy As Long
+    
+    Dim c As Long
+    Dim pLeft As Long, pRight As Long, pUp As Long, pDown As Long
+    Dim pUL As Long, pUR As Long, pDL As Long, pDR As Long
+    
+    Dim e0 As Long, e1 As Long, e2 As Long
+    Dim e3 As Long, e4 As Long, e5 As Long
+    Dim e6 As Long, e7 As Long, e8 As Long
+    
+    Dim bHalf As Long, bEdge As Long
+    Const MASK555 As Long = &H7BDE&
+    
+    ' 내부 고속 순회 (1 To 142, 1 To 158)
+    For y = 1 To 142
+        dy = y * 3
+        For x = 1 To 158
+            dx = x * 3
+            
+            c = Vram(x, y)
+            pUp = Vram(x, y - 1)
+            pDown = Vram(x, y + 1)
+            pLeft = Vram(x - 1, y)
+            pRight = Vram(x + 1, y)
+            
+            ' Fast-path: 주변 4방향이 모두 같으면 연산 스킵
+            If (c = pUp) And (c = pDown) And (c = pLeft) And (c = pRight) Then
+                Vram3x(dx, dy) = c:     Vram3x(dx + 1, dy) = c:     Vram3x(dx + 2, dy) = c
+                Vram3x(dx, dy + 1) = c: Vram3x(dx + 1, dy + 1) = c: Vram3x(dx + 2, dy + 1) = c
+                Vram3x(dx, dy + 2) = c: Vram3x(dx + 1, dy + 2) = c: Vram3x(dx + 2, dy + 2) = c
+            Else
+                pUL = Vram(x - 1, y - 1)
+                pUR = Vram(x + 1, y - 1)
+                pDL = Vram(x - 1, y + 1)
+                pDR = Vram(x + 1, y + 1)
+                
+                ' 기본 9개 서브픽셀 초기화
+                e0 = c: e1 = c: e2 = c
+                e3 = c: e4 = c: e5 = c
+                e6 = c: e7 = c: e8 = c
+                
+                ' ----------------------------------------------------
+                ' 코너 1: 좌상단 (Top-Left) 에지 블렌딩
+                ' ----------------------------------------------------
+                If (pLeft = pUp) And (pLeft <> pDown) And (pUp <> pRight) Then
+                    ' pLeft와 중심 c를 50:50 비트마스크 블렌딩
+                    bHalf = ((pLeft And MASK555) \ 2) + ((c And MASK555) \ 2)
+                    e0 = bHalf
+                    
+                    If pUL <> c Then
+                        ' 에지 날개 영역은 75:25로 더 부드럽게 감쇄
+                        bEdge = ((bHalf And MASK555) \ 2) + ((c And MASK555) \ 2)
+                        e1 = bEdge
+                        e3 = bEdge
+                    End If
+                End If
+                
+                ' ----------------------------------------------------
+                ' 코너 2: 우상단 (Top-Right) 에지 블렌딩
+                ' ----------------------------------------------------
+                If (pRight = pUp) And (pRight <> pDown) And (pUp <> pLeft) Then
+                    bHalf = ((pRight And MASK555) \ 2) + ((c And MASK555) \ 2)
+                    e2 = bHalf
+                    
+                    If pUR <> c Then
+                        bEdge = ((bHalf And MASK555) \ 2) + ((c And MASK555) \ 2)
+                        e1 = bEdge
+                        e5 = bEdge
+                    End If
+                End If
+                
+                ' ----------------------------------------------------
+                ' 코너 3: 좌하단 (Bottom-Left) 에지 블렌딩
+                ' ----------------------------------------------------
+                If (pLeft = pDown) And (pLeft <> pUp) And (pDown <> pRight) Then
+                    bHalf = ((pLeft And MASK555) \ 2) + ((c And MASK555) \ 2)
+                    e6 = bHalf
+                    
+                    If pDL <> c Then
+                        bEdge = ((bHalf And MASK555) \ 2) + ((c And MASK555) \ 2)
+                        e3 = bEdge
+                        e7 = bEdge
+                    End If
+                End If
+                
+                ' ----------------------------------------------------
+                ' 코너 4: 우하단 (Bottom-Right) 에지 블렌딩
+                ' ----------------------------------------------------
+                If (pRight = pDown) And (pRight <> pUp) And (pDown <> pLeft) Then
+                    bHalf = ((pRight And MASK555) \ 2) + ((c And MASK555) \ 2)
+                    e8 = bHalf
+                    
+                    If pDR <> c Then
+                        bEdge = ((bHalf And MASK555) \ 2) + ((c And MASK555) \ 2)
+                        e5 = bEdge
+                        e7 = bEdge
+                    End If
+                End If
+                
+                ' 3x3 버퍼에 기록
+                Vram3x(dx, dy) = e0
+                Vram3x(dx + 1, dy) = e1
+                Vram3x(dx + 2, dy) = e2
+                
+                Vram3x(dx, dy + 1) = e3
+                Vram3x(dx + 1, dy + 1) = e4
+                Vram3x(dx + 2, dy + 1) = e5
+                
+                Vram3x(dx, dy + 2) = e6
+                Vram3x(dx + 1, dy + 2) = e7
+                Vram3x(dx + 2, dy + 2) = e8
+            End If
+        Next x
+    Next y
+    
+    Call ProcessEdge3xBorders
+End Sub
+
 Private Sub ProcessEdge3xBorders()
     Dim x As Long, y As Long
     Dim dx As Long, dy As Long
@@ -395,7 +515,7 @@ Public Sub DrawScreen() 'Using Api and SetBits/StrechBits
     '320x288 크기의 Vram2x 버퍼 송출
     'Call StretchDIBits(desthdc, 0, 0, dw, dh, 0, 0, 320, 288, Vram2x(0, 0), bb2x, 0, vbSrcCopy)
     
-    Call ApplyEdge3x
+    Call ApplyEdge3x_Masked
     ' 480x432 해상도로 StretchDIBits 호출
     Call StretchDIBits(desthdc, 0, 0, dw, dh, 0, 0, 480, 432, Vram3x(0, 0), bb3x, 0, vbSrcCopy)
     
